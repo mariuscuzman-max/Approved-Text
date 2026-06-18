@@ -1,0 +1,388 @@
+import { useRef, useState } from 'react';
+import type { MouseEvent, PointerEvent } from 'react';
+import { getPathRibbonStyles, getPathThemeStyles } from '../data/words';
+import type {
+  StampEffect,
+  VisiblePathEvent,
+  WordDefinition,
+  WordId,
+  WorkbenchBoard,
+  WorkbenchGridSlot,
+} from '../types/game';
+import { formatMeaning, formatRate } from '../utils/format';
+import { isStampBlockedElement, shouldStampFromPointerInteraction } from '../utils/stampInput';
+import { getActiveWordPowerLabel, getRootChargeLabel } from '../utils/upgrades';
+import { WORKBENCH_SLOT_COUNT } from '../utils/workbench';
+
+interface WordCardProps {
+  noun: WordDefinition;
+  verb: WordDefinition | null;
+  effectiveVerb: WordDefinition | null;
+  verbSlotUnlocked: boolean;
+  manualStampCount: number;
+  tapGain: number;
+  passiveGain: number;
+  visiblePathEvent: VisiblePathEvent | null;
+  board: WorkbenchBoard;
+  sentenceFeedback: string;
+  stamps: StampEffect[];
+  onStamp: (x: number, y: number) => void;
+  onPathEventClick: (event: VisiblePathEvent) => void;
+  onUnavailableSlot: () => void;
+  onMoveWord: (wordId: WordId, xPercent: number, yPercent: number) => void;
+  onResetLayout: () => void;
+}
+
+interface DragState {
+  wordId: WordId;
+  startX: number;
+  startY: number;
+  offsetX: number;
+  offsetY: number;
+  moved: boolean;
+}
+
+interface DragPosition {
+  wordId: WordId;
+  x: number;
+  y: number;
+}
+
+function getSlotStyle(slot: WorkbenchGridSlot) {
+  const col = slot % 3;
+  const row = Math.floor(slot / 3);
+
+  return {
+    left: `calc(${col * (100 / 3)}% + 0.25rem)`,
+    top: `calc(${row * (100 / 3)}% + 0.25rem)`,
+    width: 'calc(33.333% - 0.5rem)',
+    height: 'calc(33.333% - 0.5rem)',
+  };
+}
+
+function getCellCenterPercent(clientX: number, clientY: number, bounds: DOMRect) {
+  return {
+    xPercent: bounds.width > 0 ? ((clientX - bounds.left) / bounds.width) * 100 : 0,
+    yPercent: bounds.height > 0 ? ((clientY - bounds.top) / bounds.height) * 100 : 0,
+  };
+}
+
+function WorkbenchWordCard({
+  word,
+  noun,
+  effectiveVerb,
+  manualStampCount,
+  tapGain,
+  passiveGain,
+  dragPosition,
+  slot,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+}: {
+  word: WordDefinition;
+  noun: WordDefinition;
+  effectiveVerb: WordDefinition | null;
+  manualStampCount: number;
+  tapGain: number;
+  passiveGain: number;
+  dragPosition: DragPosition | null;
+  slot: WorkbenchGridSlot;
+  onPointerDown: (event: PointerEvent<HTMLElement>, wordId: WordId) => void;
+  onPointerMove: (event: PointerEvent<HTMLElement>) => void;
+  onPointerUp: (event: PointerEvent<HTMLElement>) => void;
+}) {
+  const isNoun = word.type === 'noun';
+  const powerLabel = getActiveWordPowerLabel(word, isNoun ? effectiveVerb : null);
+  const rootChargeLabel = word.id === noun.id && word.id === 'root' ? getRootChargeLabel(manualStampCount) : null;
+  const cardStyle = dragPosition?.wordId === word.id
+    ? {
+        left: dragPosition.x,
+        top: dragPosition.y,
+        width: 'calc(33.333% - 0.5rem)',
+        height: 'calc(33.333% - 0.5rem)',
+      }
+    : getSlotStyle(slot);
+
+  return (
+    <article
+      className={`absolute z-[2] grid cursor-grab touch-none grid-rows-[auto_auto_auto_1fr] overflow-hidden rounded-md border-2 p-1.5 shadow-sm active:cursor-grabbing ${getPathThemeStyles(word.pathTheme)}`}
+      style={cardStyle}
+      onPointerDown={(event) => onPointerDown(event, word.id)}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="text-[0.55rem] font-black uppercase leading-none text-stone-500">{word.type}</div>
+      <div className={`mt-1 h-1 rounded-full ${getPathRibbonStyles(word.pathTheme)}`} />
+      <h3 className="min-w-0 whitespace-nowrap font-serif text-[clamp(0.7rem,3.2vw,0.95rem)] font-bold leading-5 text-[#27211a]">
+        {word.text}
+      </h3>
+      <div className="mt-1 min-h-0 overflow-hidden text-[0.56rem] font-bold leading-3 text-[#27211a]">
+        {word.id === noun.id ? (
+          <>
+            <div>Tap +{formatMeaning(tapGain)}</div>
+            <div>Idle +{formatRate(passiveGain)}/s</div>
+          </>
+        ) : null}
+        {powerLabel ? <div className="mt-1 line-clamp-2">Power: {powerLabel}</div> : null}
+        {rootChargeLabel ? <div className="mt-1">Root: {rootChargeLabel}</div> : null}
+      </div>
+    </article>
+  );
+}
+
+function WordCard({
+  noun,
+  verb,
+  effectiveVerb,
+  verbSlotUnlocked,
+  manualStampCount,
+  tapGain,
+  passiveGain,
+  visiblePathEvent,
+  board,
+  sentenceFeedback,
+  stamps,
+  onStamp,
+  onPathEventClick,
+  onUnavailableSlot,
+  onMoveWord,
+  onResetLayout,
+}: WordCardProps) {
+  const workbenchRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<DragState | null>(null);
+  const [dragPosition, setDragPosition] = useState<DragPosition | null>(null);
+  const cards = [noun, verb].filter((word): word is WordDefinition => Boolean(word));
+
+  const handlePointerStamp = (event: MouseEvent<HTMLDivElement>) => {
+    if (isStampBlockedElement(event.target)) {
+      return;
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    onStamp(event.clientX - bounds.left, event.clientY - bounds.top);
+  };
+
+  const stampAtClientPoint = (clientX: number, clientY: number) => {
+    if (!workbenchRef.current) {
+      return;
+    }
+
+    const bounds = workbenchRef.current.getBoundingClientRect();
+    onStamp(clientX - bounds.left, clientY - bounds.top);
+  };
+
+  const handleCardPointerDown = (event: PointerEvent<HTMLElement>, wordId: WordId) => {
+    const workbenchBounds = workbenchRef.current?.getBoundingClientRect();
+
+    if (!workbenchBounds) {
+      return;
+    }
+
+    const cardBounds = event.currentTarget.getBoundingClientRect();
+    dragStateRef.current = {
+      wordId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: event.clientX - cardBounds.left,
+      offsetY: event.clientY - cardBounds.top,
+      moved: false,
+    };
+    setDragPosition({
+      wordId,
+      x: cardBounds.left - workbenchBounds.left,
+      y: cardBounds.top - workbenchBounds.top,
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+  };
+
+  const handleCardPointerMove = (event: PointerEvent<HTMLElement>) => {
+    const dragState = dragStateRef.current;
+    const workbenchBounds = workbenchRef.current?.getBoundingClientRect();
+
+    if (!dragState || !workbenchBounds) {
+      return;
+    }
+
+    const moveDistance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
+    dragState.moved = dragState.moved || !shouldStampFromPointerInteraction({ movementDistance: moveDistance });
+
+    const cardBounds = event.currentTarget.getBoundingClientRect();
+    const nextX = Math.max(0, Math.min(workbenchBounds.width - cardBounds.width, event.clientX - workbenchBounds.left - dragState.offsetX));
+    const nextY = Math.max(0, Math.min(workbenchBounds.height - cardBounds.height, event.clientY - workbenchBounds.top - dragState.offsetY));
+
+    setDragPosition({
+      wordId: dragState.wordId,
+      x: nextX,
+      y: nextY,
+    });
+    event.stopPropagation();
+  };
+
+  const handleCardPointerUp = (event: PointerEvent<HTMLElement>) => {
+    const dragState = dragStateRef.current;
+    const workbenchBounds = workbenchRef.current?.getBoundingClientRect();
+
+    if (!dragState || !workbenchBounds) {
+      return;
+    }
+
+    const moveDistance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
+
+    if (!shouldStampFromPointerInteraction({ movementDistance: moveDistance, dragWasActive: dragState.moved })) {
+      const { xPercent, yPercent } = getCellCenterPercent(event.clientX, event.clientY, workbenchBounds);
+      onMoveWord(dragState.wordId, xPercent, yPercent);
+    } else {
+      stampAtClientPoint(event.clientX, event.clientY);
+    }
+
+    dragStateRef.current = null;
+    setDragPosition(null);
+    event.stopPropagation();
+  };
+
+  return (
+    <section className="relative grid h-full min-h-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-[#d6bc92] bg-[#fffdf6] p-3 text-left shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase text-stone-500">Sentence Workbench</div>
+          <div className="text-sm font-medium text-stone-500">Drag words into reading order.</div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="rounded border border-[#decaa9] bg-[#fff7e8] px-2 py-1 text-xs font-bold text-stone-600">
+            {board.unlockedSlots.length} / 9
+          </div>
+          <button
+            type="button"
+            data-no-stamp="true"
+            onClick={onResetLayout}
+            className="min-h-8 rounded border border-stone-300 bg-white px-2 text-xs font-bold text-stone-500 shadow-sm active:translate-y-px"
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            data-no-stamp="true"
+            onClick={onUnavailableSlot}
+            className="grid h-8 w-8 place-items-center rounded border border-stone-300 bg-white text-base font-bold text-stone-500 shadow-sm active:translate-y-px"
+            aria-label="Add word slot"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={workbenchRef}
+        role="button"
+        tabIndex={0}
+        onClick={handlePointerStamp}
+        className="relative mx-auto mt-3 aspect-square min-h-0 w-[min(92vw,620px)] max-w-full overflow-hidden rounded border border-dashed border-[#decaa9] bg-white/55 p-1 text-left outline-none transition active:scale-[0.997]"
+      >
+        <div className="pointer-events-none absolute left-2 top-2 z-[1] rounded bg-white/75 px-2 py-1 text-[0.62rem] font-bold text-stone-500 shadow-sm">
+          Tap anywhere here to stamp Meaning.
+        </div>
+
+        <div className="absolute inset-1 grid grid-cols-3 grid-rows-3 gap-1">
+          {Array.from({ length: WORKBENCH_SLOT_COUNT }, (_, index) => {
+            const unlocked = board.unlockedSlots.includes(index as WorkbenchGridSlot);
+            return (
+              <div
+                key={index}
+                className={`rounded border text-center text-[0.58rem] font-bold ${
+                  unlocked
+                    ? 'border-[#e2cfad] bg-white/50 text-stone-300'
+                    : 'border-[#ded4c2] bg-[#eee4d4]/60 text-stone-400'
+                }`}
+              >
+                {unlocked ? index + 1 : 'LOCK'}
+              </div>
+            );
+          })}
+        </div>
+
+        {cards.map((word) => {
+          const slot = board.placements[word.id];
+
+          if (slot === undefined || !board.unlockedSlots.includes(slot)) {
+            return null;
+          }
+
+          return (
+            <WorkbenchWordCard
+              key={word.id}
+              word={word}
+              noun={noun}
+              effectiveVerb={effectiveVerb}
+              manualStampCount={manualStampCount}
+              tapGain={tapGain}
+              passiveGain={passiveGain}
+              dragPosition={dragPosition}
+              slot={slot}
+              onPointerDown={handleCardPointerDown}
+              onPointerMove={handleCardPointerMove}
+              onPointerUp={handleCardPointerUp}
+            />
+          );
+        })}
+
+        {verbSlotUnlocked && !verb ? (
+          <div
+            className="absolute grid place-items-center rounded-md border-2 border-dashed border-[#d8c8ad] bg-[#f3eadc]/70 p-2 text-center text-[0.65rem] font-bold text-stone-400"
+            style={getSlotStyle(1)}
+            onClick={(event) => event.stopPropagation()}
+          >
+            Select a verb
+          </div>
+        ) : null}
+
+        {!verbSlotUnlocked ? (
+          <div
+            className="absolute grid place-items-center rounded-md border-2 border-dashed border-[#d8c8ad] bg-[#f3eadc]/70 p-2 text-center text-[0.65rem] font-bold text-stone-400"
+            style={getSlotStyle(1)}
+            onClick={(event) => event.stopPropagation()}
+          >
+            Verb slot unlocks at 100 Meaning.
+          </div>
+        ) : null}
+
+        {visiblePathEvent ? (
+          <button
+            type="button"
+            data-no-stamp="true"
+            onClick={(event) => {
+              event.stopPropagation();
+              onPathEventClick(visiblePathEvent);
+            }}
+            className="absolute z-10 w-32 -translate-x-1/2 -translate-y-1/2 rounded border-2 border-[#8e2020] bg-[#fff7e8] px-3 py-2 text-left shadow-[0_8px_18px_rgba(91,32,24,0.22)] transition hover:bg-white active:scale-95"
+            style={{ left: `${visiblePathEvent.xPercent}%`, top: `${visiblePathEvent.yPercent}%` }}
+          >
+            <div className="text-sm font-black text-[#8e2020]">{visiblePathEvent.name}</div>
+            <div className="text-xs font-bold text-stone-600">{visiblePathEvent.prompt}</div>
+          </button>
+        ) : null}
+
+        {stamps.map((stamp) => (
+          <span
+            key={stamp.id}
+            className="stamp-effect pointer-events-none absolute"
+            style={{ left: stamp.x, top: stamp.y }}
+          >
+            <span className="stamp-mark">{stamp.label ?? 'APPROVED'}</span>
+            <span className="stamp-value">+{formatMeaning(stamp.value)}</span>
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-2 rounded border border-[#decaa9] bg-white px-2 py-1 text-center text-xs font-bold text-[#27211a]">
+        {sentenceFeedback}
+      </div>
+    </section>
+  );
+}
+
+export default WordCard;

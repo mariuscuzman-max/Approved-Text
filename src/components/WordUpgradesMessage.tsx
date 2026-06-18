@@ -1,0 +1,185 @@
+import type { WordDefinition } from '../types/game';
+import { formatMeaning, formatRate } from '../utils/format';
+import {
+  getEffectiveFilingUpgradeCost,
+  getEffectiveFilingUpgradeBonus,
+  getEffectiveStampUpgradeCost,
+  getEffectiveStampUpgradeBonus,
+  getFilingUpgradeBonusModifierLabel,
+  getFilingUpgradeDiscountModifierLabel,
+  getNextUpgradeMilestone,
+  getPathBonusLabel,
+  getStampUpgradeBonusModifierLabel,
+  getStampUpgradeDiscountModifierLabel,
+  getUpgradeBaseBonus,
+  getUpgradeMilestoneMultiplier,
+} from '../utils/upgrades';
+
+interface WordUpgradesMessageProps {
+  meaning: number;
+  activeWord: WordDefinition;
+  activeVerb: WordDefinition | null;
+  stampUpgradeLevel: number;
+  filingUpgradeLevel: number;
+  upgradeCostMultiplier: number;
+  onBuyStampUpgrade: () => void;
+  onBuyFilingUpgrade: () => void;
+}
+
+function WordUpgradesMessage({
+  meaning,
+  activeWord,
+  activeVerb,
+  stampUpgradeLevel,
+  filingUpgradeLevel,
+  upgradeCostMultiplier,
+  onBuyStampUpgrade,
+  onBuyFilingUpgrade,
+}: WordUpgradesMessageProps) {
+  const stampCost = getEffectiveStampUpgradeCost(stampUpgradeLevel, activeWord, activeVerb, upgradeCostMultiplier);
+  const filingCost = getEffectiveFilingUpgradeCost(filingUpgradeLevel, activeWord, activeVerb, upgradeCostMultiplier);
+  const stampMultiplier = getUpgradeMilestoneMultiplier(stampUpgradeLevel);
+  const filingMultiplier = getUpgradeMilestoneMultiplier(filingUpgradeLevel);
+  const nextStampMilestone = getNextUpgradeMilestone(stampUpgradeLevel);
+  const nextFilingMilestone = getNextUpgradeMilestone(filingUpgradeLevel);
+  const stampBonusModifier = getStampUpgradeBonusModifierLabel(activeWord, activeVerb);
+  const stampDiscountModifier = getStampUpgradeDiscountModifierLabel(activeWord, activeVerb);
+  const filingBonusModifier = getFilingUpgradeBonusModifierLabel(activeWord, activeVerb);
+  const filingDiscountModifier = getFilingUpgradeDiscountModifierLabel(activeWord, activeVerb);
+
+  return (
+    <section className="grid h-full grid-rows-[auto_1fr] gap-3">
+      <div className="rounded-lg border border-[#decaa9] bg-white p-3 shadow-sm">
+        <div className="text-xs font-semibold uppercase text-stone-500">Current path bonus</div>
+        <div className="mt-1 text-sm font-bold text-[#27211a]">{getPathBonusLabel(activeWord)}</div>
+        {upgradeCostMultiplier < 1 ? (
+          <div className="mt-2 rounded border border-[#cbb5d6] bg-[#f7ecfb] px-2 py-1 text-xs font-bold text-[#5d4770]">
+            Softened Rules: upgrade costs -25%
+          </div>
+        ) : null}
+      </div>
+
+      <div className="min-h-0 overflow-y-auto pr-1">
+        <div className="grid gap-3">
+          <article className="rounded-lg border border-[#decaa9] bg-white p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-[#27211a]">Stamp Upgrade</h2>
+                <p className="mt-1 text-sm leading-5 text-stone-600">Improves Meaning gained from stamping.</p>
+              </div>
+              <span className="rounded border border-[#eadbc3] bg-[#fff7e8] px-2 py-1 text-xs font-bold text-stone-600">
+                Lv {stampUpgradeLevel}
+              </span>
+            </div>
+
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
+                <dt className="text-xs font-bold uppercase text-stone-500">Base bonus</dt>
+                <dd className="font-bold text-[#27211a]">+{formatRate(getUpgradeBaseBonus(stampUpgradeLevel))}/tap</dd>
+              </div>
+              <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
+                <dt className="text-xs font-bold uppercase text-stone-500">Multiplier</dt>
+                <dd className="font-bold text-[#27211a]">x{stampMultiplier}</dd>
+              </div>
+              <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
+                <dt className="text-xs font-bold uppercase text-stone-500">Total bonus</dt>
+                <dd className="font-bold text-[#27211a]">+{formatRate(getEffectiveStampUpgradeBonus(stampUpgradeLevel, activeWord, activeVerb))}/tap</dd>
+              </div>
+              <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
+                <dt className="text-xs font-bold uppercase text-stone-500">Next milestone</dt>
+                <dd className="font-bold text-[#27211a]">
+                  {nextStampMilestone ? `Lv ${nextStampMilestone}, x${getUpgradeMilestoneMultiplier(nextStampMilestone)}` : 'Max listed'}
+                </dd>
+              </div>
+            </dl>
+
+            {stampBonusModifier ? (
+              <p className="mt-2 rounded border border-[#d8c8ad] bg-[#fffaf0] px-2 py-1 text-xs font-bold text-[#5e6f2d]">
+                Active word bonus: {stampBonusModifier}
+              </p>
+            ) : null}
+
+            {stampDiscountModifier ? (
+              <p className="mt-2 rounded border border-[#d8c8ad] bg-[#fffaf0] px-2 py-1 text-xs font-bold text-[#5e6f2d]">
+                Active word discount: {stampDiscountModifier}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              disabled={meaning < stampCost}
+              onClick={onBuyStampUpgrade}
+              className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-bold transition ${
+                meaning >= stampCost
+                  ? 'bg-[#2d2922] text-[#fff8e9] hover:bg-[#443d33] active:translate-y-px'
+                  : 'cursor-not-allowed bg-stone-200 text-stone-500'
+              }`}
+            >
+              Buy for {formatMeaning(stampCost)} Meaning
+            </button>
+          </article>
+
+          <article className="rounded-lg border border-[#decaa9] bg-white p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-[#27211a]">Filing Upgrade</h2>
+                <p className="mt-1 text-sm leading-5 text-stone-600">Improves passive Meaning/sec.</p>
+              </div>
+              <span className="rounded border border-[#eadbc3] bg-[#fff7e8] px-2 py-1 text-xs font-bold text-stone-600">
+                Lv {filingUpgradeLevel}
+              </span>
+            </div>
+
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
+                <dt className="text-xs font-bold uppercase text-stone-500">Base bonus</dt>
+                <dd className="font-bold text-[#27211a]">+{formatRate(getUpgradeBaseBonus(filingUpgradeLevel))}/sec</dd>
+              </div>
+              <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
+                <dt className="text-xs font-bold uppercase text-stone-500">Multiplier</dt>
+                <dd className="font-bold text-[#27211a]">x{filingMultiplier}</dd>
+              </div>
+              <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
+                <dt className="text-xs font-bold uppercase text-stone-500">Total bonus</dt>
+                <dd className="font-bold text-[#27211a]">+{formatRate(getEffectiveFilingUpgradeBonus(filingUpgradeLevel, activeWord, activeVerb))}/sec</dd>
+              </div>
+              <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
+                <dt className="text-xs font-bold uppercase text-stone-500">Next milestone</dt>
+                <dd className="font-bold text-[#27211a]">
+                  {nextFilingMilestone ? `Lv ${nextFilingMilestone}, x${getUpgradeMilestoneMultiplier(nextFilingMilestone)}` : 'Max listed'}
+                </dd>
+              </div>
+            </dl>
+
+            {filingBonusModifier ? (
+              <p className="mt-2 rounded border border-[#d8c8ad] bg-[#fffaf0] px-2 py-1 text-xs font-bold text-[#2f778c]">
+                Active word bonus: {filingBonusModifier}
+              </p>
+            ) : null}
+
+            {filingDiscountModifier ? (
+              <p className="mt-2 rounded border border-[#d8c8ad] bg-[#fffaf0] px-2 py-1 text-xs font-bold text-[#2f778c]">
+                Active word discount: {filingDiscountModifier}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              disabled={meaning < filingCost}
+              onClick={onBuyFilingUpgrade}
+              className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-bold transition ${
+                meaning >= filingCost
+                  ? 'bg-[#2d2922] text-[#fff8e9] hover:bg-[#443d33] active:translate-y-px'
+                  : 'cursor-not-allowed bg-stone-200 text-stone-500'
+              }`}
+            >
+              Buy for {formatMeaning(filingCost)} Meaning
+            </button>
+          </article>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default WordUpgradesMessage;
