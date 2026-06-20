@@ -1,11 +1,8 @@
-export function formatMeaning(value: number): string {
-  return value.toFixed(2);
-}
+import type { BigNumberSource } from './bigNumber.ts';
+import { formatMeaning, formatRate } from './bigNumber.ts';
 
-export function formatRate(value: number): string {
-  return value.toFixed(3);
-}
+export { formatMeaning, formatRate };
 
-export function formatNumber(value: number): string {
+export function formatNumber(value: BigNumberSource): string {
   return formatMeaning(value);
 }

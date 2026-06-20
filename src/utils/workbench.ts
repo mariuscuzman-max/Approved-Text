@@ -1,5 +1,7 @@
 import { getWordById } from '../data/words.ts';
 import type { ParsedSentence, WordId, WorkbenchBoard, WorkbenchGridSlot } from '../types/game';
+import type { BigNumberSource } from './bigNumber.ts';
+import { lt } from './bigNumber.ts';
 
 export const WORKBENCH_GRID_SIZE = 3;
 export const WORKBENCH_SLOT_COUNT = 9;
@@ -59,8 +61,8 @@ export function normalizeWorkbenchBoard(board: WorkbenchBoard | undefined): Work
   };
 }
 
-export function unlockWorkbenchSlotsForProgress(board: WorkbenchBoard, meaning: number): WorkbenchBoard {
-  if (meaning < 100 || board.unlockedSlots.includes(FIRST_VERB_WORKBENCH_SLOT)) {
+export function unlockWorkbenchSlotsForProgress(board: WorkbenchBoard, meaning: BigNumberSource): WorkbenchBoard {
+  if (lt(meaning, 100) || board.unlockedSlots.includes(FIRST_VERB_WORKBENCH_SLOT)) {
     return board;
   }
 

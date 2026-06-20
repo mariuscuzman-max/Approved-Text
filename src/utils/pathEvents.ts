@@ -1,8 +1,11 @@
 import type { ActivePathEvent, PathEventType, VisibleEventType, VisiblePathEvent, WordDefinition, WordId } from '../types/game';
+import type { BigNumber, BigNumberSource } from './bigNumber.ts';
+import { max, mul } from './bigNumber.ts';
+import { getVerbEffectMultiplier } from './upgrades.ts';
 
 const EVENT_DURATION_MS = 20_000;
 const EVENT_VISIBLE_MS = 10_000;
-const MIN_EVENT_DELAY_MS = 90_000;
+export const MIN_EVENT_DELAY_SECONDS = 90;
 const DREAM_BLOOM_CURRENT_MEANING_PERCENT = 0.10;
 const DREAM_BLOOM_MIN_TAP_MULTIPLIER = 10;
 const SOFTENED_RULES_COST_MULTIPLIER = 0.75;
@@ -11,13 +14,16 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-export function getEventSpawnMultiplier(activeWord: WordDefinition | null): number {
+export function getEventSpawnMultiplier(
+  activeWord: WordDefinition | null,
+  effectiveVerb: WordDefinition | null = null,
+): number {
   if (
     activeWord?.implemented &&
     activeWord.specialEffectType === 'event_spawn_bonus' &&
     typeof activeWord.specialEffectValue === 'number'
   ) {
-    return 1 + activeWord.specialEffectValue;
+    return 1 + activeWord.specialEffectValue * getVerbEffectMultiplier(effectiveVerb);
   }
 
   return 1;
@@ -27,7 +33,7 @@ export function getNextPathEventDelayMs(spawnMultiplier = 1): number {
   const minSeconds = 120;
   const maxSeconds = 240;
   const randomDelayMs = ((minSeconds + Math.random() * (maxSeconds - minSeconds)) * 1000) / Math.max(1, spawnMultiplier);
-  return Math.max(randomDelayMs, MIN_EVENT_DELAY_MS);
+  return Math.max(randomDelayMs, MIN_EVENT_DELAY_SECONDS * 1000);
 }
 
 export function getPathEventType(chosenFirstPath: WordId | null): PathEventType | null {
@@ -102,10 +108,13 @@ export function getSoftenedRulesUpgradeCostMultiplier(activePathEvent: ActivePat
   return activePathEvent?.type === 'dream-softened-rules' ? SOFTENED_RULES_COST_MULTIPLIER : 1;
 }
 
-export function getMeaningBloomGain(currentMeaning: number, currentTapGain: number): number {
-  return Math.max(
-    currentMeaning * DREAM_BLOOM_CURRENT_MEANING_PERCENT,
-    currentTapGain * DREAM_BLOOM_MIN_TAP_MULTIPLIER,
+export function getMeaningBloomGain(
+  currentMeaning: BigNumberSource,
+  currentTapGain: BigNumberSource,
+): BigNumber {
+  return max(
+    mul(currentMeaning, DREAM_BLOOM_CURRENT_MEANING_PERCENT),
+    mul(currentTapGain, DREAM_BLOOM_MIN_TAP_MULTIPLIER),
   );
 }
 

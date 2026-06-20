@@ -4,6 +4,7 @@ import type {
   ActivePathEvent,
   AppTab,
   GameState,
+  SessionStats,
   StampEffect,
   VisiblePathEvent,
   WordId,
@@ -11,15 +12,18 @@ import type {
 } from './types/game';
 import { loadGameState, resetGameState, saveGameState } from './utils/storage';
 import { formatMeaning, formatRate } from './utils/format';
+import { add, eq, lt, lte, mul, sub } from './utils/bigNumber.ts';
 import ResourceBar from './components/ResourceBar';
 import WordCard from './components/WordCard';
 import PathChoicePanel from './components/PathChoicePanel';
 import DictionaryScreen from './components/DictionaryScreen';
 import WordUpgradesMessage from './components/WordUpgradesMessage';
 import PathBlock from './components/PathBlock';
+import QuoteFeed from './components/QuoteFeed';
+import StatsScreen from './components/StatsScreen';
 import { createDefaultState, mergeSavedState } from './utils/gameState';
 import { getHundredMeaningUnlockWordIds } from './utils/milestones';
-import { canTriggerDreamUnlock, getDreamUnlockWordIds } from './utils/dream';
+import { canTriggerDreamUnlock, unlockDreamLayer } from './utils/dream';
 import {
   getActiveWordTapMultiplier,
   getPassiveGain,
@@ -49,8 +53,21 @@ import {
   placeWorkbenchWord,
   unlockWorkbenchSlotsForProgress,
 } from './utils/workbench';
+import { FIRST_CHOICE_COST, isFirstPathChoiceUnlocked } from './utils/progression.ts';
+import {
+  createDefaultSessionStats,
+  recordEventClaim,
+  recordEventSpawn,
+  recordPassiveGain,
+  recordTap,
+  recordUpgradePurchase,
+} from './utils/stats.ts';
+import {
+  getStreamDrizzleGain,
+  isStreamDrizzleActive,
+  STREAM_DRIZZLE_INTERVAL_SECONDS,
+} from './utils/stream.ts';
 
-const FIRST_CHOICE_COST = 2;
 const TEN_MEANING_MILESTONE = 10;
 const TWENTY_FIVE_MEANING_MILESTONE = 25;
 const FIFTY_MEANING_MILESTONE = 50;
@@ -62,14 +79,16 @@ const IS_DEV_MODE = import.meta.env.DEV;
 function App() {
   const [gameState, setGameState] = useState<GameState>(() => mergeSavedState(loadGameState()));
   const [activeTab, setActiveTab] = useState<AppTab>('main');
+  const [sessionStats, setSessionStats] = useState<SessionStats>(() => createDefaultSessionStats());
   const [stamps, setStamps] = useState<StampEffect[]>([]);
-  const [notice, setNotice] = useState('Tap World to stamp Meaning into the record.');
+  const [, setNotice] = useState('Tap World to stamp Meaning into the record.');
   const [visiblePathEvent, setVisiblePathEvent] = useState<VisiblePathEvent | null>(null);
   const [activePathEvent, setActivePathEvent] = useState<ActivePathEvent | null>(null);
   const [dreamPromptDismissed, setDreamPromptDismissed] = useState(false);
   const [now, setNow] = useState(Date.now());
   const nextEventTimerRef = useRef<number | null>(null);
   const visibleEventTimerRef = useRef<number | null>(null);
+  const lastPlayTimeUpdateRef = useRef(Date.now());
 
   const activeNoun = useMemo(() => getWordById(gameState.activeNounId), [gameState.activeNounId]);
   const activeVerb = useMemo(
@@ -101,14 +120,21 @@ function App() {
   const farmEventTapMultiplier = getFarmEventTapMultiplier(activePathEvent);
   const flowEventIdleMultiplier = getFlowEventIdleMultiplier(activePathEvent, gameState.filingUpgradeLevel);
   const softenedRulesCostMultiplier = getSoftenedRulesUpgradeCostMultiplier(activePathEvent);
-  const currentTapGain = getTapGain(effectiveNoun, gameState.stampUpgradeLevel, effectiveVerb) * farmEventTapMultiplier;
-  const currentPassiveGain = getPassiveGain(
-    effectiveNoun,
-    gameState.filingUpgradeLevel,
-    gameState.activeWordStartedAt,
-    now,
-    effectiveVerb,
-  ) * flowEventIdleMultiplier;
+  const currentTapGain = mul(
+    getTapGain(effectiveNoun, gameState.stampUpgradeLevel, effectiveVerb),
+    farmEventTapMultiplier,
+  );
+  const currentPassiveGain = mul(
+    getPassiveGain(
+      effectiveNoun,
+      gameState.filingUpgradeLevel,
+      gameState.activeWordStartedAt,
+      now,
+      effectiveVerb,
+    ),
+    flowEventIdleMultiplier,
+  );
+  const currentPassiveGainRef = useRef(currentPassiveGain);
   const activeEventLabel = activePathEvent && activeEventSecondsRemaining > 0
     ? `${activePathEvent.name}: ${activeEventSecondsRemaining}s`
     : null;
@@ -165,6 +191,7 @@ function App() {
     gameState.workbenchBoard,
     gameState.dreamUnlocked,
     gameState.totalMeaningEarned,
+    gameState.stats,
   ]);
 
   const clearPathEventTimers = useCallback(() => {
@@ -183,6 +210,7 @@ function App() {
     chosenFirstPath: WordId | null,
     dreamUnlocked: boolean,
     activeWordForSchedule = effectiveNoun,
+    effectiveVerbForSchedule = effectiveVerb,
   ) => {
     const eventType = getRandomVisibleEventType(chosenFirstPath, dreamUnlocked);
 
@@ -196,9 +224,11 @@ function App() {
 
     nextEventTimerRef.current = window.setTimeout(() => {
       setVisiblePathEvent(createVisiblePathEvent(eventType));
+      setGameState((current) => ({ ...current, stats: recordEventSpawn(current.stats) }));
+      setSessionStats((current) => recordEventSpawn(current));
       nextEventTimerRef.current = null;
-    }, getNextPathEventDelayMs(getEventSpawnMultiplier(activeWordForSchedule)));
-  }, [effectiveNoun]);
+    }, getNextPathEventDelayMs(getEventSpawnMultiplier(activeWordForSchedule, effectiveVerbForSchedule)));
+  }, [effectiveNoun, effectiveVerb]);
 
   useEffect(() => {
     clearPathEventTimers();
@@ -261,6 +291,24 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      const timestamp = Date.now();
+      const elapsedMs = Math.max(0, timestamp - lastPlayTimeUpdateRef.current);
+      lastPlayTimeUpdateRef.current = timestamp;
+
+      setGameState((current) => ({
+        ...current,
+        stats: {
+          ...current.stats,
+          totalPlayTimeMs: current.stats.totalPlayTimeMs + elapsedMs,
+        },
+      }));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const nextWorkbenchBoard = unlockWorkbenchSlotsForProgress(gameState.workbenchBoard, gameState.meaning);
 
     if (nextWorkbenchBoard === gameState.workbenchBoard) {
@@ -290,7 +338,7 @@ function App() {
   useEffect(() => {
     const nextPassiveMeaningPerSecond = currentPassiveGain;
 
-    if (gameState.passiveMeaningPerSecond === nextPassiveMeaningPerSecond) {
+    if (eq(gameState.passiveMeaningPerSecond, nextPassiveMeaningPerSecond)) {
       return;
     }
 
@@ -308,10 +356,55 @@ function App() {
   ]);
 
   useEffect(() => {
+    currentPassiveGainRef.current = currentPassiveGain;
+  }, [currentPassiveGain]);
+
+  useEffect(() => {
+    if (!isStreamDrizzleActive(effectiveNoun)) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      const passiveRate = currentPassiveGainRef.current;
+      const streamGain = getStreamDrizzleGain(passiveRate, effectiveNoun, effectiveVerb);
+
+      if (lte(streamGain, 0)) {
+        return;
+      }
+
+      setGameState((current) => ({
+        ...current,
+        meaning: add(current.meaning, streamGain),
+        totalMeaningEarned: add(current.totalMeaningEarned, streamGain),
+        stats: recordPassiveGain(current.stats, streamGain, passiveRate),
+      }));
+      setSessionStats((current) => recordPassiveGain(current, streamGain, passiveRate));
+      setNotice(`Stream: +${formatMeaning(streamGain)} Meaning`);
+
+      const feedbackId = Date.now() + Math.random();
+      setStamps((current) => [
+        ...current,
+        {
+          id: feedbackId,
+          x: '50%',
+          y: '50%',
+          value: streamGain,
+          label: 'STREAM',
+        },
+      ]);
+      window.setTimeout(() => {
+        setStamps((current) => current.filter((stamp) => stamp.id !== feedbackId));
+      }, STAMP_LIFETIME_MS);
+    }, STREAM_DRIZZLE_INTERVAL_SECONDS * 1000);
+
+    return () => window.clearInterval(timer);
+  }, [effectiveNoun, effectiveVerb]);
+
+  useEffect(() => {
     if (
       !gameState.chosenFirstPath ||
       gameState.tenMeaningMilestoneGranted ||
-      gameState.meaning < TEN_MEANING_MILESTONE
+      lt(gameState.meaning, TEN_MEANING_MILESTONE)
     ) {
       return;
     }
@@ -323,7 +416,7 @@ function App() {
       if (
         current.tenMeaningMilestoneGranted ||
         !current.chosenFirstPath ||
-        current.meaning < TEN_MEANING_MILESTONE
+        lt(current.meaning, TEN_MEANING_MILESTONE)
       ) {
         return current;
       }
@@ -348,7 +441,7 @@ function App() {
       !gameState.chosenFirstPath ||
       !gameState.tenMeaningMilestoneGranted ||
       gameState.twentyFiveMeaningMilestoneGranted ||
-      gameState.meaning < TWENTY_FIVE_MEANING_MILESTONE
+      lt(gameState.meaning, TWENTY_FIVE_MEANING_MILESTONE)
     ) {
       return;
     }
@@ -361,7 +454,7 @@ function App() {
         !current.chosenFirstPath ||
         !current.tenMeaningMilestoneGranted ||
         current.twentyFiveMeaningMilestoneGranted ||
-        current.meaning < TWENTY_FIVE_MEANING_MILESTONE
+        lt(current.meaning, TWENTY_FIVE_MEANING_MILESTONE)
       ) {
         return current;
       }
@@ -387,7 +480,7 @@ function App() {
       !gameState.chosenFirstPath ||
       !gameState.twentyFiveMeaningMilestoneGranted ||
       gameState.fiftyMeaningMilestoneGranted ||
-      gameState.meaning < FIFTY_MEANING_MILESTONE
+      lt(gameState.meaning, FIFTY_MEANING_MILESTONE)
     ) {
       return;
     }
@@ -400,7 +493,7 @@ function App() {
         !current.chosenFirstPath ||
         !current.twentyFiveMeaningMilestoneGranted ||
         current.fiftyMeaningMilestoneGranted ||
-        current.meaning < FIFTY_MEANING_MILESTONE
+        lt(current.meaning, FIFTY_MEANING_MILESTONE)
       ) {
         return current;
       }
@@ -426,7 +519,7 @@ function App() {
       !gameState.chosenFirstPath ||
       !gameState.fiftyMeaningMilestoneGranted ||
       gameState.hundredMeaningMilestoneGranted ||
-      gameState.meaning < HUNDRED_MEANING_MILESTONE
+      lt(gameState.meaning, HUNDRED_MEANING_MILESTONE)
     ) {
       return;
     }
@@ -440,7 +533,7 @@ function App() {
         !current.chosenFirstPath ||
         !current.fiftyMeaningMilestoneGranted ||
         current.hundredMeaningMilestoneGranted ||
-        current.meaning < HUNDRED_MEANING_MILESTONE
+        lt(current.meaning, HUNDRED_MEANING_MILESTONE)
       ) {
         return current;
       }
@@ -466,42 +559,45 @@ function App() {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setGameState((current) => {
-        const parsedSentenceForTick = parseWorkbenchSentence(current.workbenchBoard, current.activeNounId);
-        const activeWordForTick = getWordById(parsedSentenceForTick.activeNounId);
-        const activeVerbForTick = parsedSentenceForTick.effectiveVerbId
-          ? getWordById(parsedSentenceForTick.effectiveVerbId)
-          : null;
-        const passiveGain = getPassiveGain(
-          activeWordForTick,
-          current.filingUpgradeLevel,
-          current.activeWordStartedAt,
+      const passiveGain = mul(
+        getPassiveGain(
+          effectiveNoun,
+          gameState.filingUpgradeLevel,
+          gameState.activeWordStartedAt,
           Date.now(),
-          activeVerbForTick,
-        )
-          * getFlowEventIdleMultiplier(activePathEvent, current.filingUpgradeLevel);
+          effectiveVerb,
+        ),
+        getFlowEventIdleMultiplier(activePathEvent, gameState.filingUpgradeLevel),
+      );
 
-        if (passiveGain <= 0) {
-          return current;
-        }
+      if (lte(passiveGain, 0)) {
+        return;
+      }
 
-        return {
-          ...current,
-          meaning: current.meaning + passiveGain,
-          totalMeaningEarned: current.totalMeaningEarned + passiveGain,
-          passiveMeaningPerSecond: passiveGain,
-        };
-      });
+      setGameState((current) => ({
+        ...current,
+        meaning: add(current.meaning, passiveGain),
+        totalMeaningEarned: add(current.totalMeaningEarned, passiveGain),
+        passiveMeaningPerSecond: passiveGain,
+        stats: recordPassiveGain(current.stats, passiveGain, passiveGain),
+      }));
+      setSessionStats((current) => recordPassiveGain(current, passiveGain, passiveGain));
     }, PASSIVE_TICK_MS);
 
     return () => window.clearInterval(timer);
-  }, [activePathEvent]);
+  }, [
+    activePathEvent,
+    effectiveNoun,
+    effectiveVerb,
+    gameState.activeWordStartedAt,
+    gameState.filingUpgradeLevel,
+  ]);
 
   const handleStamp = (x: number, y: number) => {
     const stampId = Date.now() + Math.random();
     const nextManualStampCount = gameState.manualStampCount + 1;
     const activeWordTapMultiplier = getActiveWordTapMultiplier(effectiveNoun, nextManualStampCount, effectiveVerb);
-    const stampedValue = currentTapGain * activeWordTapMultiplier;
+    const stampedValue = mul(currentTapGain, activeWordTapMultiplier);
     const stampedLabel = activeWordTapMultiplier > 1
       ? `Root bonus: +${formatMeaning(stampedValue)} Meaning`
       : `${effectiveNoun.text} stamped: +${formatMeaning(stampedValue)} Meaning`;
@@ -513,24 +609,28 @@ function App() {
         ? getWordById(currentParsedSentence.effectiveVerbId)
         : null;
       const nextCurrentManualStampCount = current.manualStampCount + 1;
-      const baseTapGain = getTapGain(currentActiveWord, current.stampUpgradeLevel, currentActiveVerb)
-        * getFarmEventTapMultiplier(activePathEvent);
+      const baseTapGain = mul(
+        getTapGain(currentActiveWord, current.stampUpgradeLevel, currentActiveVerb),
+        getFarmEventTapMultiplier(activePathEvent),
+      );
       const currentActiveWordTapMultiplier = getActiveWordTapMultiplier(
         currentActiveWord,
         nextCurrentManualStampCount,
         currentActiveVerb,
       );
-      const tapGain = baseTapGain * currentActiveWordTapMultiplier;
+      const tapGain = mul(baseTapGain, currentActiveWordTapMultiplier);
 
       return {
         ...current,
-        meaning: current.meaning + tapGain,
-        totalMeaningEarned: current.totalMeaningEarned + tapGain,
+        meaning: add(current.meaning, tapGain),
+        totalMeaningEarned: add(current.totalMeaningEarned, tapGain),
         activeWordId: currentActiveWord.id,
         activeNounId: currentActiveWord.id,
         manualStampCount: nextCurrentManualStampCount,
+        stats: recordTap(current.stats, tapGain),
       };
     });
+    setSessionStats((current) => recordTap(current, stampedValue));
     setNotice(stampedLabel);
     setStamps((current) => [
       ...current,
@@ -551,13 +651,13 @@ function App() {
     const word = getWordById(wordId);
 
     setGameState((current) => {
-      if (current.chosenFirstPath || current.meaning < FIRST_CHOICE_COST || word.id === 'world') {
+      if (current.chosenFirstPath || !isFirstPathChoiceUnlocked(current.meaning) || word.id === 'world') {
         return current;
       }
 
       return {
         ...current,
-        meaning: current.meaning - word.unlockCost,
+        meaning: sub(current.meaning, word.unlockCost),
         activeNounId: word.id,
         activeWordId: word.id,
         unlockedWordIds: [...current.unlockedWordIds, word.id],
@@ -655,9 +755,11 @@ function App() {
       setVisiblePathEvent(null);
       setGameState((current) => ({
         ...current,
-        meaning: current.meaning + meaningGain,
-        totalMeaningEarned: current.totalMeaningEarned + meaningGain,
+        meaning: add(current.meaning, meaningGain),
+        totalMeaningEarned: add(current.totalMeaningEarned, meaningGain),
+        stats: recordEventClaim(current.stats, event.type, meaningGain),
       }));
+      setSessionStats((current) => recordEventClaim(current, event.type, meaningGain));
       scheduleNextPathEvent(gameState.chosenFirstPath, gameState.dreamUnlocked, effectiveNoun);
       setNotice(`Meaning Bloom: +${formatMeaning(meaningGain)} Meaning`);
       return;
@@ -667,6 +769,8 @@ function App() {
 
     setVisiblePathEvent(null);
     setActivePathEvent(nextActiveEvent);
+    setGameState((current) => ({ ...current, stats: recordEventClaim(current.stats, event.type) }));
+    setSessionStats((current) => recordEventClaim(current, event.type));
     scheduleNextPathEvent(gameState.chosenFirstPath, gameState.dreamUnlocked, effectiveNoun);
 
     if (event.type === 'farm') {
@@ -696,6 +800,8 @@ function App() {
     }
 
     setVisiblePathEvent(createVisiblePathEvent(eventType));
+    setGameState((current) => ({ ...current, stats: recordEventSpawn(current.stats) }));
+    setSessionStats((current) => recordEventSpawn(current));
     setNotice('Dev test event spawned.');
   };
 
@@ -707,7 +813,7 @@ function App() {
       softenedRulesCostMultiplier,
     );
 
-    if (gameState.meaning < cost) {
+    if (lt(gameState.meaning, cost)) {
       return;
     }
 
@@ -723,16 +829,18 @@ function App() {
         getSoftenedRulesUpgradeCostMultiplier(activePathEvent),
       );
 
-      if (current.meaning < currentCost) {
+      if (lt(current.meaning, currentCost)) {
         return current;
       }
 
       return {
         ...current,
-        meaning: current.meaning - currentCost,
+        meaning: sub(current.meaning, currentCost),
         stampUpgradeLevel: current.stampUpgradeLevel + 1,
+        stats: recordUpgradePurchase(current.stats),
       };
     });
+    setSessionStats((current) => recordUpgradePurchase(current));
 
     if (getUpgradeMilestoneMultiplier(nextLevel) > getUpgradeMilestoneMultiplier(nextLevel - 1)) {
       setNotice(`Stamp Upgrade milestone reached: x${getUpgradeMilestoneMultiplier(nextLevel)} tapping bonus`);
@@ -750,7 +858,7 @@ function App() {
       softenedRulesCostMultiplier,
     );
 
-    if (gameState.meaning < cost) {
+    if (lt(gameState.meaning, cost)) {
       return;
     }
 
@@ -766,7 +874,7 @@ function App() {
         getSoftenedRulesUpgradeCostMultiplier(activePathEvent),
       );
 
-      if (current.meaning < currentCost) {
+      if (lt(current.meaning, currentCost)) {
         return current;
       }
 
@@ -774,8 +882,9 @@ function App() {
 
       return {
         ...current,
-        meaning: current.meaning - currentCost,
+        meaning: sub(current.meaning, currentCost),
         filingUpgradeLevel: nextFilingUpgradeLevel,
+        stats: recordUpgradePurchase(current.stats),
         passiveMeaningPerSecond: getPassiveGain(
           currentActiveNoun,
           nextFilingUpgradeLevel,
@@ -785,6 +894,7 @@ function App() {
         ),
       };
     });
+    setSessionStats((current) => recordUpgradePurchase(current));
 
     if (getUpgradeMilestoneMultiplier(nextLevel) > getUpgradeMilestoneMultiplier(nextLevel - 1)) {
       setNotice(`Filing Upgrade milestone reached: x${getUpgradeMilestoneMultiplier(nextLevel)} idle bonus`);
@@ -847,6 +957,9 @@ function App() {
   const handleReset = () => {
     resetGameState();
     setGameState(createDefaultState());
+    const resetAt = Date.now();
+    lastPlayTimeUpdateRef.current = resetAt;
+    setSessionStats(createDefaultSessionStats(resetAt));
     setActiveTab('main');
     setStamps([]);
     setDreamPromptDismissed(false);
@@ -854,14 +967,7 @@ function App() {
   };
 
   const handleEnterDream = () => {
-    setGameState((current) => ({
-      ...current,
-      dreamUnlocked: true,
-      unlockedWordIds: Array.from(new Set<WordId>([
-        ...current.unlockedWordIds,
-        ...getDreamUnlockWordIds(),
-      ])),
-    }));
+    setGameState(unlockDreamLayer);
     setDreamPromptDismissed(false);
     setNotice('Dream entered. New word acquired: Slumber');
   };
@@ -872,10 +978,10 @@ function App() {
   };
 
   return (
-    <main className={`h-screen overflow-hidden px-4 py-4 text-ink sm:px-6 ${
+    <main className={`h-dvh overflow-hidden px-4 py-4 text-ink sm:px-6 ${
       gameState.dreamUnlocked ? 'bg-[#f4e8f1]' : 'bg-paper'
     }`}>
-      <div className={`mx-auto grid h-full w-full max-w-2xl grid-rows-[auto_auto_1fr_auto] rounded-lg border shadow-[0_18px_45px_rgba(61,43,27,0.16)] ${
+      <div className={`mx-auto grid h-full w-full max-w-2xl grid-rows-[auto_auto_minmax(0,1fr)] rounded-lg border shadow-[0_18px_45px_rgba(61,43,27,0.16)] ${
         gameState.dreamUnlocked
           ? 'border-[#cdb0d6] bg-[#fff7fb]'
           : 'border-[#d7c3a3] bg-[#fffaf0]'
@@ -893,13 +999,9 @@ function App() {
           activeEventLabel={activeEventLabel}
         />
 
-        <section className="min-h-0 overflow-hidden p-4">
+        <section className="min-h-0 overflow-y-auto p-4 pb-24">
           {activeTab === 'main' ? (
-            <div className={`grid h-full gap-3 ${
-              canShowDreamPrompt
-                ? 'grid-rows-[auto_auto_1fr_auto_auto_auto]'
-                : 'grid-rows-[auto_1fr_auto_auto_auto]'
-            }`}>
+            <div className="grid min-h-full content-start gap-3">
               <PathBlock activeWord={effectiveNoun} milestone={currentMilestone} />
 
               {canShowDreamPrompt ? (
@@ -933,11 +1035,12 @@ function App() {
                 effectiveVerb={effectiveVerb}
                 verbSlotUnlocked={verbSlotUnlocked}
                 manualStampCount={gameState.manualStampCount}
+                activeWordStartedAt={gameState.activeWordStartedAt}
+                now={now}
                 tapGain={currentTapGain}
                 passiveGain={currentPassiveGain}
                 visiblePathEvent={visiblePathEvent}
                 board={gameState.workbenchBoard}
-                sentenceFeedback={parsedSentence.feedback}
                 stamps={stamps}
                 onStamp={handleStamp}
                 onPathEventClick={handlePathEventClick}
@@ -946,9 +1049,7 @@ function App() {
                 onResetLayout={handleResetWorkbenchLayout}
               />
 
-              <div className="rounded border border-[#decaa9] bg-white px-3 py-2 text-center text-sm font-bold text-[#27211a]">
-                {notice}
-              </div>
+              <QuoteFeed />
 
               <PathChoicePanel
                 meaning={gameState.meaning}
@@ -1004,10 +1105,21 @@ function App() {
               onBuyFilingUpgrade={handleBuyFilingUpgrade}
             />
           ) : null}
+
+          {activeTab === 'stats' ? (
+            <StatsScreen
+              gameState={gameState}
+              sessionStats={sessionStats}
+              currentTapGain={currentTapGain}
+              currentPassiveGain={currentPassiveGain}
+              currentSentence={parsedSentence.sentenceText || effectiveNoun.text}
+              now={now}
+            />
+          ) : null}
         </section>
 
-        <nav className="grid grid-cols-3 border-t border-[#e3d2b7] bg-[#f7eddb] p-2">
-          {(['main', 'dictionary', 'upgrades'] as AppTab[]).map((tab) => (
+        <nav className="fixed bottom-0 left-1/2 z-50 grid w-full max-w-2xl -translate-x-1/2 grid-cols-4 border border-b-0 border-[#d7c3a3] bg-[#f7eddb] p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(61,43,27,0.14)]">
+          {(['main', 'dictionary', 'upgrades', 'stats'] as AppTab[]).map((tab) => (
             <button
               key={tab}
               type="button"

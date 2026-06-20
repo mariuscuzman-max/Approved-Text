@@ -10,8 +10,8 @@
 
 ## Meaning Scale
 
-* 0.01 to 2 Meaning: slow manual World stamping.
-* 2 Meaning: first path choice.
+* 0.01 to 1 Meaning: slow manual World stamping.
+* 1 Meaning: first path choice.
 * 10 Meaning: next word in chosen path.
 * 100 Meaning: first major structural unlock, likely second sentence slot.
 * 1,000 Meaning: first modifier/early combo layer.
@@ -39,7 +39,7 @@
 ## Current Immediate Balance
 
 * World starts at +0.01 Meaning/tap.
-* First path choice currently appears at 2 Meaning.
+* First path choice currently appears at 1 Meaning.
 * First choice should remain early enough to avoid boredom, but still feel earned.
 * Farm/Manual path should improve active tapping.
 * Water/Flow path should improve passive Meaning/sec.

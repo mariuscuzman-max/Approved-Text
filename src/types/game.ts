@@ -1,6 +1,8 @@
+import type { BigNumber } from '../utils/bigNumber.ts';
+
 export type WordType = 'noun' | 'adjective' | 'verb';
 
-export type AppTab = 'main' | 'dictionary' | 'upgrades';
+export type AppTab = 'main' | 'dictionary' | 'upgrades' | 'stats';
 
 export type WordId =
   | 'apple'
@@ -13,6 +15,7 @@ export type WordId =
   | 'grow'
   | 'harvest'
   | 'orchard'
+  | 'oak'
   | 'plow'
   | 'fertile'
   | 'season'
@@ -21,17 +24,26 @@ export type WordId =
   | 'stream'
   | 'river'
   | 'flow'
+  | 'ice'
+  | 'pour'
   | 'reservoir'
   | 'tide'
+  | 'lake'
   | 'current'
   | 'flood'
   | 'ocean'
   | 'dream'
   | 'slumber'
   | 'echo'
+  | 'clock'
+  | 'remember'
+  | 'acquire'
   | 'chance'
   | 'dice'
   | 'omen'
+  | 'lucid'
+  | 'mirror'
+  | 'nightmare'
   | 'vision'
   | 'sleep'
   | 'whim'
@@ -81,7 +93,22 @@ export type SpecialEffectType =
   | 'filing_upgrade_bonus_multiplier'
   | 'stamp_upgrade_discount'
   | 'filing_upgrade_discount'
+  | 'periodic_passive_burst'
   | 'event_spawn_bonus'
+  | 'current_meaning_tap_bonus'
+  | 'harvest_word_for_run'
+  | 'season_cycle'
+  | 'timed_idle_surge'
+  | 'store_idle_release'
+  | 'idle_to_tap'
+  | 'recursive_tap_chance'
+  | 'timed_chance_reward'
+  | 'chance_effect_bonus'
+  | 'cross_path_acquisition'
+  | 'event_preview_bonus'
+  | 'randomness_stabilizer'
+  | 'copy_base_stats'
+  | 'risk_reward'
   | 'event_duration_bonus'
   | 'event_strength_bonus'
   | 'instant_event_reward'
@@ -117,14 +144,43 @@ export interface WordDefinition {
   unlocks?: WordId[];
 }
 
+export interface EventStatCounts {
+  farm: number;
+  water: number;
+  'dream-bloom': number;
+  'dream-softened-rules': number;
+}
+
+export interface TrackedStats {
+  meaningEarnedFromTapping: BigNumber;
+  meaningEarnedFromPassive: BigNumber;
+  meaningEarnedFromEvents: BigNumber;
+  manualStamps: number;
+  generatedTaps: number;
+  bestSingleTapGain: BigNumber;
+  bestMeaningPerSecond: BigNumber;
+  upgradesBought: number;
+  eventsSpawned: number;
+  eventsClaimed: number;
+  eventClaims: EventStatCounts;
+}
+
+export interface GlobalStats extends TrackedStats {
+  totalPlayTimeMs: number;
+}
+
+export interface SessionStats extends TrackedStats {
+  startedAt: number;
+}
+
 export interface GameState {
-  meaning: number;
+  meaning: BigNumber;
   activeNounId: WordId;
   activeVerbId: WordId | null;
   activeWordId: WordId;
   unlockedWordIds: WordId[];
   chosenFirstPath: WordId | null;
-  passiveMeaningPerSecond: number;
+  passiveMeaningPerSecond: BigNumber;
   tenMeaningMilestoneGranted: boolean;
   twentyFiveMeaningMilestoneGranted: boolean;
   fiftyMeaningMilestoneGranted: boolean;
@@ -136,15 +192,41 @@ export interface GameState {
   workbenchLayout: WorkbenchLayout;
   workbenchBoard: WorkbenchBoard;
   dreamUnlocked: boolean;
-  totalMeaningEarned: number;
+  totalMeaningEarned: BigNumber;
+  stats: GlobalStats;
   lastSavedAt: number | null;
+}
+
+export interface SerializedGameState extends Omit<
+  GameState,
+  'meaning' | 'passiveMeaningPerSecond' | 'totalMeaningEarned' | 'stats'
+> {
+  meaning: string | number;
+  passiveMeaningPerSecond: string | number;
+  totalMeaningEarned?: string | number;
+  stats?: SerializedGlobalStats;
+}
+
+export interface SerializedGlobalStats extends Omit<
+  GlobalStats,
+  | 'meaningEarnedFromTapping'
+  | 'meaningEarnedFromPassive'
+  | 'meaningEarnedFromEvents'
+  | 'bestSingleTapGain'
+  | 'bestMeaningPerSecond'
+> {
+  meaningEarnedFromTapping: string | number;
+  meaningEarnedFromPassive: string | number;
+  meaningEarnedFromEvents: string | number;
+  bestSingleTapGain: string | number;
+  bestMeaningPerSecond: string | number;
 }
 
 export interface StampEffect {
   id: number;
-  x: number;
-  y: number;
-  value: number;
+  x: number | string;
+  y: number | string;
+  value: BigNumber;
   label?: string;
 }
 

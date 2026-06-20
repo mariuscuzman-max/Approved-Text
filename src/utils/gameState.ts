@@ -1,5 +1,7 @@
 import { getWordById } from '../data/words.ts';
-import type { GameState, WordId, WorkbenchCardPosition, WorkbenchLayout } from '../types/game';
+import type { GameState, SerializedGameState, WordId, WorkbenchCardPosition, WorkbenchLayout } from '../types/game';
+import { max, toDecimal } from './bigNumber.ts';
+import { createDefaultGlobalStats, mergeGlobalStats } from './stats.ts';
 import {
   createDefaultWorkbenchBoard,
   migrateActiveWordsToWorkbenchBoard,
@@ -44,13 +46,13 @@ export function createDefaultState(): GameState {
   const now = Date.now();
 
   return {
-    meaning: 0,
+    meaning: toDecimal(0),
     activeNounId: 'world',
     activeVerbId: null,
     activeWordId: 'world',
     unlockedWordIds: ['world'],
     chosenFirstPath: null,
-    passiveMeaningPerSecond: 0,
+    passiveMeaningPerSecond: toDecimal(0),
     tenMeaningMilestoneGranted: false,
     twentyFiveMeaningMilestoneGranted: false,
     fiftyMeaningMilestoneGranted: false,
@@ -62,17 +64,25 @@ export function createDefaultState(): GameState {
     workbenchLayout: DEFAULT_WORKBENCH_LAYOUT,
     workbenchBoard: createDefaultWorkbenchBoard(),
     dreamUnlocked: false,
-    totalMeaningEarned: 0,
+    totalMeaningEarned: toDecimal(0),
+    stats: createDefaultGlobalStats(),
     lastSavedAt: null,
   };
 }
 
-export function mergeSavedState(saved: GameState | null): GameState {
+export function mergeSavedState(saved: GameState | SerializedGameState | null): GameState {
   const defaultState = createDefaultState();
 
   if (!saved) {
     return defaultState;
   }
+
+  const savedMeaning = max(toDecimal(saved.meaning), 0);
+  const savedPassiveMeaningPerSecond = max(toDecimal(saved.passiveMeaningPerSecond), 0);
+  const savedTotalMeaningEarned = max(
+    max(toDecimal(saved.totalMeaningEarned ?? saved.meaning), savedMeaning),
+    0,
+  );
 
   const savedUnlockedWordIds = Array.from(new Set<WordId>([
     'world',
@@ -116,18 +126,18 @@ export function mergeSavedState(saved: GameState | null): GameState {
       activeNounId,
       activeVerbId,
     ),
-    saved.meaning,
+    savedMeaning,
   );
 
   return {
     ...defaultState,
     ...saved,
-    meaning: Math.max(0, saved.meaning),
+    meaning: savedMeaning,
     activeNounId,
     activeVerbId,
     activeWordId: activeNounId,
     unlockedWordIds,
-    passiveMeaningPerSecond: Math.max(0, saved.passiveMeaningPerSecond),
+    passiveMeaningPerSecond: savedPassiveMeaningPerSecond,
     tenMeaningMilestoneGranted:
       saved.tenMeaningMilestoneGranted ??
       (
@@ -175,6 +185,7 @@ export function mergeSavedState(saved: GameState | null): GameState {
     workbenchLayout: mergeWorkbenchLayout(saved.workbenchLayout),
     workbenchBoard,
     dreamUnlocked,
-    totalMeaningEarned: Math.max(saved.totalMeaningEarned ?? saved.meaning, saved.meaning, 0),
+    totalMeaningEarned: savedTotalMeaningEarned,
+    stats: mergeGlobalStats(saved.stats),
   };
 }

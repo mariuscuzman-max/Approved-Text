@@ -1,4 +1,6 @@
-import type { GameState, WordId } from '../types/game';
+import type { GameState, SerializedGameState, WordId } from '../types/game';
+import { serializeBigNumber, toDecimal } from './bigNumber.ts';
+import { serializeGlobalStats } from './stats.ts';
 
 const STORAGE_KEY = 'approved-text-save-v4';
 const OLD_STORAGE_KEYS = ['approved-text-save-v1', 'approved-text-save-v2', 'approved-text-save-v3'];
@@ -15,6 +17,7 @@ function isWordId(value: unknown): value is WordId {
     value === 'grow' ||
     value === 'harvest' ||
     value === 'orchard' ||
+    value === 'oak' ||
     value === 'plow' ||
     value === 'fertile' ||
     value === 'season' ||
@@ -23,17 +26,26 @@ function isWordId(value: unknown): value is WordId {
     value === 'stream' ||
     value === 'river' ||
     value === 'flow' ||
+    value === 'ice' ||
+    value === 'pour' ||
     value === 'reservoir' ||
     value === 'tide' ||
+    value === 'lake' ||
     value === 'current' ||
     value === 'flood' ||
     value === 'ocean' ||
     value === 'dream' ||
     value === 'slumber' ||
     value === 'echo' ||
+    value === 'clock' ||
+    value === 'remember' ||
+    value === 'acquire' ||
     value === 'chance' ||
     value === 'dice' ||
     value === 'omen' ||
+    value === 'lucid' ||
+    value === 'mirror' ||
+    value === 'nightmare' ||
     value === 'vision' ||
     value === 'sleep' ||
     value === 'whim' ||
@@ -42,12 +54,29 @@ function isWordId(value: unknown): value is WordId {
   );
 }
 
-function isSavedGameState(value: unknown): value is GameState {
+function isBigNumberSaveValue(value: unknown): value is number | string {
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    return false;
+  }
+
+  if (typeof value === 'string' && value.trim().length === 0) {
+    return false;
+  }
+
+  try {
+    const decimal = toDecimal(value);
+    return Number.isFinite(decimal.m) && Number.isFinite(decimal.e);
+  } catch {
+    return false;
+  }
+}
+
+function isSavedGameState(value: unknown): value is SerializedGameState {
   if (!value || typeof value !== 'object') {
     return false;
   }
 
-  const saved = value as Partial<GameState>;
+  const saved = value as Partial<SerializedGameState>;
   const workbenchLayoutValid =
     saved.workbenchLayout === undefined ||
     (
@@ -71,14 +100,14 @@ function isSavedGameState(value: unknown): value is GameState {
     );
 
   return (
-    typeof saved.meaning === 'number' &&
+    isBigNumberSaveValue(saved.meaning) &&
     isWordId(saved.activeWordId) &&
     (isWordId(saved.activeNounId) || saved.activeNounId === undefined) &&
     (isWordId(saved.activeVerbId) || saved.activeVerbId === null || saved.activeVerbId === undefined) &&
     Array.isArray(saved.unlockedWordIds) &&
     saved.unlockedWordIds.every(isWordId) &&
     (isWordId(saved.chosenFirstPath) || saved.chosenFirstPath === null) &&
-    typeof saved.passiveMeaningPerSecond === 'number' &&
+    isBigNumberSaveValue(saved.passiveMeaningPerSecond) &&
     (typeof saved.tenMeaningMilestoneGranted === 'boolean' || saved.tenMeaningMilestoneGranted === undefined) &&
     (
       typeof saved.twentyFiveMeaningMilestoneGranted === 'boolean' ||
@@ -93,12 +122,17 @@ function isSavedGameState(value: unknown): value is GameState {
     workbenchLayoutValid &&
     workbenchBoardValid &&
     (typeof saved.dreamUnlocked === 'boolean' || saved.dreamUnlocked === undefined) &&
-    (typeof saved.totalMeaningEarned === 'number' || saved.totalMeaningEarned === undefined) &&
+    (isBigNumberSaveValue(saved.totalMeaningEarned) || saved.totalMeaningEarned === undefined) &&
+    (saved.stats === undefined || (typeof saved.stats === 'object' && saved.stats !== null)) &&
     (typeof saved.lastSavedAt === 'number' || saved.lastSavedAt === null || saved.lastSavedAt === undefined)
   );
 }
 
-export function loadGameState(): GameState | null {
+export function parseSavedGameState(value: unknown): SerializedGameState | null {
+  return isSavedGameState(value) ? value : null;
+}
+
+export function loadGameState(): SerializedGameState | null {
   try {
     const rawSave = window.localStorage.getItem(STORAGE_KEY);
 
@@ -107,14 +141,24 @@ export function loadGameState(): GameState | null {
     }
 
     const parsedSave: unknown = JSON.parse(rawSave);
-    return isSavedGameState(parsedSave) ? parsedSave : null;
+    return parseSavedGameState(parsedSave);
   } catch {
     return null;
   }
 }
 
+export function serializeGameState(state: GameState): SerializedGameState {
+  return {
+    ...state,
+    meaning: serializeBigNumber(state.meaning),
+    passiveMeaningPerSecond: serializeBigNumber(state.passiveMeaningPerSecond),
+    totalMeaningEarned: serializeBigNumber(state.totalMeaningEarned),
+    stats: serializeGlobalStats(state.stats),
+  };
+}
+
 export function saveGameState(state: GameState): void {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeGameState(state)));
 }
 
 export function resetGameState(): void {

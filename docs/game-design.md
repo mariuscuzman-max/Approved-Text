@@ -54,7 +54,7 @@ The game should feel closer to Cookie Clicker’s slow-burn pacing than a typica
 
 Early unlocks should feel earned.
 
-The first important choice should not happen instantly. A cost around 5 Meaning for the first path choice is currently the target.
+The first important choice should not happen instantly. A cost of 1 Meaning for the first path choice is currently the target.
 
 ## 4. Removed for Now
 

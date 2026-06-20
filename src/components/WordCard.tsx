@@ -10,6 +10,7 @@ import type {
   WorkbenchGridSlot,
 } from '../types/game';
 import { formatMeaning, formatRate } from '../utils/format';
+import type { BigNumber } from '../utils/bigNumber.ts';
 import { isStampBlockedElement, shouldStampFromPointerInteraction } from '../utils/stampInput';
 import { getActiveWordPowerLabel, getRootChargeLabel } from '../utils/upgrades';
 import { WORKBENCH_SLOT_COUNT } from '../utils/workbench';
@@ -20,11 +21,12 @@ interface WordCardProps {
   effectiveVerb: WordDefinition | null;
   verbSlotUnlocked: boolean;
   manualStampCount: number;
-  tapGain: number;
-  passiveGain: number;
+  activeWordStartedAt: number;
+  now: number;
+  tapGain: BigNumber;
+  passiveGain: BigNumber;
   visiblePathEvent: VisiblePathEvent | null;
   board: WorkbenchBoard;
-  sentenceFeedback: string;
   stamps: StampEffect[];
   onStamp: (x: number, y: number) => void;
   onPathEventClick: (event: VisiblePathEvent) => void;
@@ -72,6 +74,8 @@ function WorkbenchWordCard({
   noun,
   effectiveVerb,
   manualStampCount,
+  activeWordStartedAt,
+  now,
   tapGain,
   passiveGain,
   dragPosition,
@@ -84,8 +88,10 @@ function WorkbenchWordCard({
   noun: WordDefinition;
   effectiveVerb: WordDefinition | null;
   manualStampCount: number;
-  tapGain: number;
-  passiveGain: number;
+  activeWordStartedAt: number;
+  now: number;
+  tapGain: BigNumber;
+  passiveGain: BigNumber;
   dragPosition: DragPosition | null;
   slot: WorkbenchGridSlot;
   onPointerDown: (event: PointerEvent<HTMLElement>, wordId: WordId) => void;
@@ -93,7 +99,12 @@ function WorkbenchWordCard({
   onPointerUp: (event: PointerEvent<HTMLElement>) => void;
 }) {
   const isNoun = word.type === 'noun';
-  const powerLabel = getActiveWordPowerLabel(word, isNoun ? effectiveVerb : null);
+  const powerLabel = getActiveWordPowerLabel(
+    word,
+    isNoun ? effectiveVerb : null,
+    activeWordStartedAt,
+    now,
+  );
   const rootChargeLabel = word.id === noun.id && word.id === 'root' ? getRootChargeLabel(manualStampCount) : null;
   const cardStyle = dragPosition?.wordId === word.id
     ? {
@@ -139,11 +150,12 @@ function WordCard({
   effectiveVerb,
   verbSlotUnlocked,
   manualStampCount,
+  activeWordStartedAt,
+  now,
   tapGain,
   passiveGain,
   visiblePathEvent,
   board,
-  sentenceFeedback,
   stamps,
   onStamp,
   onPathEventClick,
@@ -245,7 +257,7 @@ function WordCard({
   };
 
   return (
-    <section className="relative grid h-full min-h-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-[#d6bc92] bg-[#fffdf6] p-3 text-left shadow-sm">
+    <section className="relative grid w-full grid-rows-[auto_auto] rounded-lg border border-[#d6bc92] bg-[#fffdf6] p-3 text-left shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase text-stone-500">Sentence Workbench</div>
@@ -319,6 +331,8 @@ function WordCard({
               noun={noun}
               effectiveVerb={effectiveVerb}
               manualStampCount={manualStampCount}
+              activeWordStartedAt={activeWordStartedAt}
+              now={now}
               tapGain={tapGain}
               passiveGain={passiveGain}
               dragPosition={dragPosition}
@@ -378,9 +392,6 @@ function WordCard({
         ))}
       </div>
 
-      <div className="mt-2 rounded border border-[#decaa9] bg-white px-2 py-1 text-center text-xs font-bold text-[#27211a]">
-        {sentenceFeedback}
-      </div>
     </section>
   );
 }

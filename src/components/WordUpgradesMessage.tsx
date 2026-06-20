@@ -1,5 +1,7 @@
 import type { WordDefinition } from '../types/game';
 import { formatMeaning, formatRate } from '../utils/format';
+import type { BigNumberSource } from '../utils/bigNumber.ts';
+import { gte } from '../utils/bigNumber.ts';
 import {
   getEffectiveFilingUpgradeCost,
   getEffectiveFilingUpgradeBonus,
@@ -16,7 +18,7 @@ import {
 } from '../utils/upgrades';
 
 interface WordUpgradesMessageProps {
-  meaning: number;
+  meaning: BigNumberSource;
   activeWord: WordDefinition;
   activeVerb: WordDefinition | null;
   stampUpgradeLevel: number;
@@ -46,6 +48,8 @@ function WordUpgradesMessage({
   const stampDiscountModifier = getStampUpgradeDiscountModifierLabel(activeWord, activeVerb);
   const filingBonusModifier = getFilingUpgradeBonusModifierLabel(activeWord, activeVerb);
   const filingDiscountModifier = getFilingUpgradeDiscountModifierLabel(activeWord, activeVerb);
+  const canAffordStamp = gte(meaning, stampCost);
+  const canAffordFiling = gte(meaning, filingCost);
 
   return (
     <section className="grid h-full grid-rows-[auto_1fr] gap-3">
@@ -107,10 +111,10 @@ function WordUpgradesMessage({
 
             <button
               type="button"
-              disabled={meaning < stampCost}
+              disabled={!canAffordStamp}
               onClick={onBuyStampUpgrade}
               className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-bold transition ${
-                meaning >= stampCost
+                canAffordStamp
                   ? 'bg-[#2d2922] text-[#fff8e9] hover:bg-[#443d33] active:translate-y-px'
                   : 'cursor-not-allowed bg-stone-200 text-stone-500'
               }`}
@@ -165,10 +169,10 @@ function WordUpgradesMessage({
 
             <button
               type="button"
-              disabled={meaning < filingCost}
+              disabled={!canAffordFiling}
               onClick={onBuyFilingUpgrade}
               className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-bold transition ${
-                meaning >= filingCost
+                canAffordFiling
                   ? 'bg-[#2d2922] text-[#fff8e9] hover:bg-[#443d33] active:translate-y-px'
                   : 'cursor-not-allowed bg-stone-200 text-stone-500'
               }`}

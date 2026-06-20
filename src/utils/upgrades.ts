@@ -1,4 +1,7 @@
 import type { WordDefinition } from '../types/game';
+import type { BigNumber, BigNumberSource } from './bigNumber.ts';
+import { add, max as bigMax, mul, pow, toDecimal } from './bigNumber.ts';
+import { getStreamDrizzlePassiveSeconds, STREAM_DRIZZLE_INTERVAL_SECONDS } from './stream.ts';
 
 const UPGRADE_BASE_COST = 1;
 const UPGRADE_COST_GROWTH = 1.15;
@@ -8,18 +11,21 @@ const UPGRADE_ABSOLUTE_MIN_COST = 0.1;
 const FARM_TAP_MULTIPLIER = 1.25;
 const FLOW_IDLE_MULTIPLIER = 1.25;
 const RIVER_PASSIVE_GROWTH_PER_MINUTE = 0.01;
+export const RIVER_PASSIVE_GROWTH_CAP = 2;
 const ROOT_PROC_INTERVAL = 25;
 
 export const UPGRADE_MILESTONES = [10, 25, 50, 100, 500, 1000];
 
-export function getUpgradeCost(level: number): number {
-  return UPGRADE_BASE_COST * Math.pow(UPGRADE_COST_GROWTH, level);
+export function getUpgradeCost(level: number): BigNumber {
+  return mul(UPGRADE_BASE_COST, pow(UPGRADE_COST_GROWTH, level));
 }
 
-export function applyUpgradeCostFloor(baseCost: number, discountedCost: number): number {
-  return Math.max(
-    discountedCost,
-    baseCost * UPGRADE_COST_FLOOR_BASE_MULTIPLIER,
+export function applyUpgradeCostFloor(
+  baseCost: BigNumberSource,
+  discountedCost: BigNumberSource,
+): BigNumber {
+  return bigMax(
+    bigMax(discountedCost, mul(baseCost, UPGRADE_COST_FLOOR_BASE_MULTIPLIER)),
     UPGRADE_ABSOLUTE_MIN_COST,
   );
 }
@@ -33,16 +39,16 @@ export function getNextUpgradeMilestone(level: number): number | null {
   return UPGRADE_MILESTONES.find((milestone) => level < milestone) ?? null;
 }
 
-export function getUpgradeBaseBonus(level: number): number {
-  return level * UPGRADE_BONUS_PER_LEVEL;
+export function getUpgradeBaseBonus(level: number): BigNumber {
+  return toDecimal(level * UPGRADE_BONUS_PER_LEVEL);
 }
 
-export function getStampUpgradeBonus(level: number): number {
-  return getUpgradeBaseBonus(level) * getUpgradeMilestoneMultiplier(level);
+export function getStampUpgradeBonus(level: number): BigNumber {
+  return mul(getUpgradeBaseBonus(level), getUpgradeMilestoneMultiplier(level));
 }
 
-export function getFilingUpgradeBonus(level: number): number {
-  return getUpgradeBaseBonus(level) * getUpgradeMilestoneMultiplier(level);
+export function getFilingUpgradeBonus(level: number): BigNumber {
+  return mul(getUpgradeBaseBonus(level), getUpgradeMilestoneMultiplier(level));
 }
 
 export function getPathTapMultiplier(word: WordDefinition): number {
@@ -82,74 +88,74 @@ function formatPercent(value: number): string {
 }
 
 export function applyActiveWordStampBonus(
-  baseBonus: number,
+  baseBonus: BigNumberSource,
   word: WordDefinition,
   verb: WordDefinition | null = null,
-): number {
+): BigNumber {
   if (
     word.implemented &&
     word.specialEffectType === 'stamp_upgrade_bonus_multiplier' &&
     typeof word.specialEffectValue === 'number'
   ) {
-    return baseBonus * applyVerbToBonusMultiplier(word.specialEffectValue, verb);
+    return mul(baseBonus, applyVerbToBonusMultiplier(word.specialEffectValue, verb));
   }
 
-  return baseBonus;
+  return toDecimal(baseBonus);
 }
 
 export function applyActiveWordFilingBonus(
-  baseBonus: number,
+  baseBonus: BigNumberSource,
   word: WordDefinition,
   verb: WordDefinition | null = null,
-): number {
+): BigNumber {
   if (
     word.implemented &&
     word.specialEffectType === 'filing_upgrade_bonus_multiplier' &&
     typeof word.specialEffectValue === 'number'
   ) {
-    return baseBonus * applyVerbToBonusMultiplier(word.specialEffectValue, verb);
+    return mul(baseBonus, applyVerbToBonusMultiplier(word.specialEffectValue, verb));
   }
 
-  return baseBonus;
+  return toDecimal(baseBonus);
 }
 
 export function applyActiveWordStampDiscount(
-  baseCost: number,
+  baseCost: BigNumberSource,
   word: WordDefinition,
   verb: WordDefinition | null = null,
-): number {
+): BigNumber {
   if (
     word.implemented &&
     word.specialEffectType === 'stamp_upgrade_discount' &&
     typeof word.specialEffectValue === 'number'
   ) {
-    return baseCost * applyVerbToDiscountMultiplier(word.specialEffectValue, verb);
+    return mul(baseCost, applyVerbToDiscountMultiplier(word.specialEffectValue, verb));
   }
 
-  return baseCost;
+  return toDecimal(baseCost);
 }
 
 export function applyActiveWordFilingDiscount(
-  baseCost: number,
+  baseCost: BigNumberSource,
   word: WordDefinition,
   verb: WordDefinition | null = null,
-): number {
+): BigNumber {
   if (
     word.implemented &&
     word.specialEffectType === 'filing_upgrade_discount' &&
     typeof word.specialEffectValue === 'number'
   ) {
-    return baseCost * applyVerbToDiscountMultiplier(word.specialEffectValue, verb);
+    return mul(baseCost, applyVerbToDiscountMultiplier(word.specialEffectValue, verb));
   }
 
-  return baseCost;
+  return toDecimal(baseCost);
 }
 
 export function getEffectiveStampUpgradeBonus(
   level: number,
   word: WordDefinition,
   verb: WordDefinition | null = null,
-): number {
+): BigNumber {
   return applyActiveWordStampBonus(getStampUpgradeBonus(level), word, verb);
 }
 
@@ -157,7 +163,7 @@ export function getEffectiveFilingUpgradeBonus(
   level: number,
   word: WordDefinition,
   verb: WordDefinition | null = null,
-): number {
+): BigNumber {
   return applyActiveWordFilingBonus(getFilingUpgradeBonus(level), word, verb);
 }
 
@@ -166,9 +172,9 @@ export function getEffectiveStampUpgradeCost(
   word: WordDefinition,
   verb: WordDefinition | null = null,
   extraCostMultiplier = 1,
-): number {
+): BigNumber {
   const baseCost = getUpgradeCost(level);
-  const discountedCost = applyActiveWordStampDiscount(baseCost, word, verb) * extraCostMultiplier;
+  const discountedCost = mul(applyActiveWordStampDiscount(baseCost, word, verb), extraCostMultiplier);
   return applyUpgradeCostFloor(baseCost, discountedCost);
 }
 
@@ -177,9 +183,9 @@ export function getEffectiveFilingUpgradeCost(
   word: WordDefinition,
   verb: WordDefinition | null = null,
   extraCostMultiplier = 1,
-): number {
+): BigNumber {
   const baseCost = getUpgradeCost(level);
-  const discountedCost = applyActiveWordFilingDiscount(baseCost, word, verb) * extraCostMultiplier;
+  const discountedCost = mul(applyActiveWordFilingDiscount(baseCost, word, verb), extraCostMultiplier);
   return applyUpgradeCostFloor(baseCost, discountedCost);
 }
 
@@ -216,24 +222,37 @@ export function getActiveWordPassiveMultiplier(
   now: number,
   verb: WordDefinition | null = null,
 ): number {
-  if (word.implemented && word.id === 'river' && word.specialEffectType === 'passive_multiplier') {
-    const elapsedMinutes = Math.max(0, now - activeWordStartedAt) / 60000;
-    return 1 + elapsedMinutes * RIVER_PASSIVE_GROWTH_PER_MINUTE * getVerbEffectMultiplier(verb);
+  return 1 + getRiverPassiveIncrease(word, activeWordStartedAt, now, verb);
+}
+
+export function getRiverPassiveIncrease(
+  word: WordDefinition,
+  activeWordStartedAt: number,
+  now: number,
+  verb: WordDefinition | null = null,
+): number {
+  if (!word.implemented || word.id !== 'river' || word.specialEffectType !== 'passive_multiplier') {
+    return 0;
   }
 
-  return 1;
+  const elapsedMinutes = Math.max(0, now - activeWordStartedAt) / 60000;
+  const uncappedIncrease = elapsedMinutes * RIVER_PASSIVE_GROWTH_PER_MINUTE * getVerbEffectMultiplier(verb);
+  return Math.min(uncappedIncrease, RIVER_PASSIVE_GROWTH_CAP);
 }
 
 export function getTapGain(
   word: WordDefinition,
   stampUpgradeLevel: number,
   verb: WordDefinition | null = null,
-): number {
+): BigNumber {
   const verbNounBaseMultiplier = getVerbNounBaseMultiplier(verb);
 
-  return (
-    (word.tapValue * verbNounBaseMultiplier + getEffectiveStampUpgradeBonus(stampUpgradeLevel, word, verb)) *
-    getPathTapMultiplier(word)
+  return mul(
+    add(
+      mul(word.tapValue, verbNounBaseMultiplier),
+      getEffectiveStampUpgradeBonus(stampUpgradeLevel, word, verb),
+    ),
+    getPathTapMultiplier(word),
   );
 }
 
@@ -243,13 +262,18 @@ export function getPassiveGain(
   activeWordStartedAt = Date.now(),
   now = Date.now(),
   verb: WordDefinition | null = null,
-): number {
+): BigNumber {
   const verbNounBaseMultiplier = getVerbNounBaseMultiplier(verb);
 
-  return (
-    (word.passiveValue * verbNounBaseMultiplier + getEffectiveFilingUpgradeBonus(filingUpgradeLevel, word, verb)) *
-    getPathIdleMultiplier(word) *
-    getActiveWordPassiveMultiplier(word, activeWordStartedAt, now, verb)
+  return mul(
+    mul(
+      add(
+        mul(word.passiveValue, verbNounBaseMultiplier),
+        getEffectiveFilingUpgradeBonus(filingUpgradeLevel, word, verb),
+      ),
+      getPathIdleMultiplier(word),
+    ),
+    getActiveWordPassiveMultiplier(word, activeWordStartedAt, now, verb),
   );
 }
 
@@ -265,7 +289,12 @@ export function getPathBonusLabel(word: WordDefinition): string {
   return 'Path bonus: none';
 }
 
-export function getActiveWordPowerLabel(word: WordDefinition, verb: WordDefinition | null = null): string | null {
+export function getActiveWordPowerLabel(
+  word: WordDefinition,
+  verb: WordDefinition | null = null,
+  activeWordStartedAt = Date.now(),
+  now = Date.now(),
+): string | null {
   if (!word.implemented) {
     return null;
   }
@@ -283,7 +312,7 @@ export function getActiveWordPowerLabel(word: WordDefinition, verb: WordDefiniti
   }
 
   if (word.id === 'stream') {
-    return `Filing Upgrade cost -${formatPercent(1 - applyVerbToDiscountMultiplier(0.95, verb))}`;
+    return `Every ${STREAM_DRIZZLE_INTERVAL_SECONDS}s, gain ${getStreamDrizzlePassiveSeconds(word, verb)}s of passive Meaning`;
   }
 
   if (word.id === 'root') {
@@ -291,11 +320,14 @@ export function getActiveWordPowerLabel(word: WordDefinition, verb: WordDefiniti
   }
 
   if (word.id === 'river') {
-    return `Passive gain grows +${formatPercent(RIVER_PASSIVE_GROWTH_PER_MINUTE * getVerbEffectMultiplier(verb))} per minute while active`;
+    const currentIncrease = getRiverPassiveIncrease(word, activeWordStartedAt, now, verb);
+    const currentPercent = currentIncrease * 100;
+    const displayedPercent = Number.isInteger(currentPercent) ? currentPercent.toFixed(0) : currentPercent.toFixed(1);
+    return `Passive +${displayedPercent}% (+${formatPercent(RIVER_PASSIVE_GROWTH_PER_MINUTE * getVerbEffectMultiplier(verb))}/min, cap +200%)`;
   }
 
   if (word.id === 'slumber') {
-    return 'Events appear 30% more often';
+    return `Events appear ${30 * getVerbEffectMultiplier(verb)}% more often`;
   }
 
   if (word.id === 'understand') {

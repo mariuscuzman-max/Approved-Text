@@ -1,9 +1,11 @@
 import { getUpgradesForPath } from '../data/upgrades';
 import type { PathChoice, UpgradeDefinition } from '../types/game';
 import { formatMeaning } from '../utils/format';
+import type { BigNumberSource } from '../utils/bigNumber.ts';
+import { gte } from '../utils/bigNumber.ts';
 
 interface UpgradesScreenProps {
-  meaning: number;
+  meaning: BigNumberSource;
   purchasedPath: PathChoice;
   purchasedUpgradeIds: string[];
   onBuyUpgrade: (upgrade: UpgradeDefinition) => void;
@@ -32,7 +34,7 @@ function UpgradesScreen({ meaning, purchasedPath, purchasedUpgradeIds, onBuyUpgr
       <div className="grid gap-3">
         {pathUpgrades.map((upgrade) => {
           const isPurchased = purchasedUpgradeIds.includes(upgrade.id);
-          const canAfford = meaning >= upgrade.cost;
+          const canAfford = gte(meaning, upgrade.cost);
 
           return (
             <article

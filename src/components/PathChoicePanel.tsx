@@ -1,15 +1,15 @@
 import type { WordDefinition, WordId } from '../types/game';
 import { formatMeaning } from '../utils/format';
 import { getPathRibbonStyles, getPathThemeStyles } from '../data/words';
+import type { BigNumberSource } from '../utils/bigNumber.ts';
+import { FIRST_CHOICE_COST, isFirstPathChoiceUnlocked } from '../utils/progression.ts';
 
 interface PathChoicePanelProps {
-  meaning: number;
+  meaning: BigNumberSource;
   chosenFirstPath: WordId | null;
   choices: WordDefinition[];
   onChooseWord: (wordId: WordId) => void;
 }
-
-const FIRST_CHOICE_COST = 2;
 
 function PathChoicePanel({ meaning, chosenFirstPath, choices, onChooseWord }: PathChoicePanelProps) {
   if (chosenFirstPath) {
@@ -22,7 +22,7 @@ function PathChoicePanel({ meaning, chosenFirstPath, choices, onChooseWord }: Pa
     );
   }
 
-  if (meaning < FIRST_CHOICE_COST) {
+  if (!isFirstPathChoiceUnlocked(meaning)) {
     return (
       <section className="rounded-lg border border-[#decaa9] bg-[#f7eddb] p-3 text-sm font-semibold text-stone-600">
         Next word choice unlocks at {formatMeaning(FIRST_CHOICE_COST)} Meaning.

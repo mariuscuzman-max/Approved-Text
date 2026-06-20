@@ -6,7 +6,7 @@
 * First resource is Meaning.
 * First active word is World.
 * World gives +0.01 Meaning per tap/stamp.
-* First path choice happens at 2 Meaning.
+* First path choice happens at 1 Meaning.
 * Early game has only two path choices:
   * Farm path
   * Flow path
@@ -23,7 +23,7 @@
 Use this as the first milestone ladder:
 
 * 0 Meaning: World starts active.
-* 2 Meaning: choose first run path, Farm or Flow.
+* 1 Meaning: choose first run path, Farm or Flow.
 * 10 Meaning: unlock next word in chosen path.
 * 25 Meaning: unlock another word or first small path effect.
 * 50 Meaning: unlock stronger path identity or second path word.
@@ -155,7 +155,7 @@ A simple first run should look like this:
 
 1. Player starts with World.
 2. Player stamps World slowly.
-3. At 2 Meaning, player chooses Farm or Flow.
+3. At 1 Meaning, player chooses Farm or Flow.
 4. Chosen path becomes the run identity.
 5. Dictionary shows only acquired words.
 6. At 10, 25, and 50 Meaning, the player gains more path words/effects.
@@ -165,7 +165,7 @@ A simple first run should look like this:
 
 ## Important Unknowns To Test Later
 
-* Is 2 Meaning still the correct first path unlock?
+* Is 1 Meaning still the correct first path unlock?
 * Is 10 Meaning too soon or too slow for the next word?
 * Should the second sentence slot unlock exactly at 100 Meaning?
 * Should Dream appear at 100 Meaning or after the second slot?
