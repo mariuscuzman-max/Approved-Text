@@ -25,6 +25,8 @@ function createTrackedStats(): TrackedStats {
       water: 0,
       'dream-bloom': 0,
       'dream-softened-rules': 0,
+      'dream-facedown-truth': 0,
+      'dream-wheel-of-meaning': 0,
     },
   };
 }
@@ -80,6 +82,8 @@ export function mergeGlobalStats(
       water: safeCount(saved.eventClaims?.water),
       'dream-bloom': safeCount(saved.eventClaims?.['dream-bloom']),
       'dream-softened-rules': safeCount(saved.eventClaims?.['dream-softened-rules']),
+      'dream-facedown-truth': safeCount(saved.eventClaims?.['dream-facedown-truth']),
+      'dream-wheel-of-meaning': safeCount(saved.eventClaims?.['dream-wheel-of-meaning']),
     },
     totalPlayTimeMs: Number.isFinite(saved.totalPlayTimeMs)
       ? Math.max(0, saved.totalPlayTimeMs ?? 0)

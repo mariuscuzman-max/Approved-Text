@@ -83,6 +83,22 @@ export const words: WordDefinition[] = [
     implemented: true,
   }),
   createWord({
+    id: 'and',
+    text: 'And',
+    type: 'connector',
+    pathId: 'starter',
+    pathLabel: 'Grammar / Universal',
+    pathTheme: 'starter',
+    description: 'A joining word waiting for permission to connect two approved terms.',
+    unlockMeaning: 250,
+    tapValue: 0,
+    passiveValue: 0,
+    effectDescription: 'Planned: joins words or sentence fragments. Grammar behavior is not active yet.',
+    specialEffectType: 'future_sentence_synergy',
+    specialEffectValue: null,
+    implemented: false,
+  }),
+  createWord({
     id: 'farm',
     text: 'Farm',
     type: 'noun',
@@ -180,7 +196,20 @@ export const words: WordDefinition[] = [
     specialEffectValue: 1.1,
     implemented: false,
   }),
-
+  createWord({
+    id: 'heavy',
+    text: 'Heavy',
+    type: 'adjective',
+    ...farmPath,
+    description: 'A quality that gives approved ground more weight and force.',
+    unlockMeaning: 1000,
+    tapValue: 0,
+    passiveValue: 0,
+    effectDescription: 'The next Farm noun gains +50% base tap value.',
+    specialEffectType: 'adjective_tap_base_multiplier',
+    specialEffectValue: 1.5,
+    implemented: true,
+  }),
   createWord({
     id: 'oak',
     text: 'Oak',
@@ -195,8 +224,6 @@ export const words: WordDefinition[] = [
     specialEffectValue: null,
     implemented: false,
   }),
-
-
   createWord({
     id: 'plow',
     text: 'Plow',
@@ -365,8 +392,21 @@ export const words: WordDefinition[] = [
     specialEffectValue: null,
     implemented: false,
   }),
-
-    createWord({
+  createWord({
+    id: 'still',
+    text: 'Still',
+    type: 'adjective',
+    ...flowPath,
+    description: 'A quality that lets approved water gather without moving.',
+    unlockMeaning: 1000,
+    tapValue: 0,
+    passiveValue: 0,
+    effectDescription: 'The next Water noun gains +50% base passive value.',
+    specialEffectType: 'adjective_passive_base_multiplier',
+    specialEffectValue: 1.5,
+    implemented: true,
+  }),
+  createWord({
     id: 'lake',
     text: 'Lake',
     type: 'noun',
@@ -380,7 +420,6 @@ export const words: WordDefinition[] = [
     specialEffectValue: null,
     implemented: false,
   }),
-  
   createWord({
     id: 'current',
     text: 'Current',
@@ -471,7 +510,7 @@ export const words: WordDefinition[] = [
     type: 'noun',
     ...dreamPath,
     description: 'A device that persuades uncertain moments to arrive on schedule.',
-    unlockMeaning: 500,
+    unlockMeaning: 1000,
     tapValue: 0.01,
     passiveValue: 0.01,
     effectDescription: 'Planned: every 24 seconds, a 24% chance grants roughly one minute of Meaning.',
@@ -684,6 +723,7 @@ export function getWordTypeStyles(type: WordType): string {
     noun: 'border-stone-500 bg-white text-stone-700',
     adjective: 'rounded-full border-stone-400 bg-white text-stone-700',
     verb: 'border-stone-700 bg-white text-stone-800',
+    connector: 'border-dashed border-[#9a6a36] bg-[#fff7e8] text-[#6f4f24]',
   };
 
   return styles[type];

@@ -4,6 +4,7 @@ import { getPathRibbonStyles, getPathThemeStyles } from '../data/words';
 import type {
   StampEffect,
   VisiblePathEvent,
+  WheelRevealState,
   WordDefinition,
   WordId,
   WorkbenchBoard,
@@ -18,7 +19,9 @@ import { WORKBENCH_SLOT_COUNT } from '../utils/workbench';
 interface WordCardProps {
   noun: WordDefinition;
   verb: WordDefinition | null;
+  adjective: WordDefinition | null;
   effectiveVerb: WordDefinition | null;
+  adjectiveFeedback: string | null;
   verbSlotUnlocked: boolean;
   manualStampCount: number;
   activeWordStartedAt: number;
@@ -30,6 +33,9 @@ interface WordCardProps {
   stamps: StampEffect[];
   onStamp: (x: number, y: number) => void;
   onPathEventClick: (event: VisiblePathEvent) => void;
+  onFacedownTruthPick: (event: VisiblePathEvent, cardIndex: number) => void;
+  wheelReveal: WheelRevealState | null;
+  onWheelSpin: (event: VisiblePathEvent) => void;
   onUnavailableSlot: () => void;
   onMoveWord: (wordId: WordId, xPercent: number, yPercent: number) => void;
   onResetLayout: () => void;
@@ -147,7 +153,9 @@ function WorkbenchWordCard({
 function WordCard({
   noun,
   verb,
+  adjective,
   effectiveVerb,
+  adjectiveFeedback,
   verbSlotUnlocked,
   manualStampCount,
   activeWordStartedAt,
@@ -159,6 +167,9 @@ function WordCard({
   stamps,
   onStamp,
   onPathEventClick,
+  onFacedownTruthPick,
+  wheelReveal,
+  onWheelSpin,
   onUnavailableSlot,
   onMoveWord,
   onResetLayout,
@@ -166,7 +177,7 @@ function WordCard({
   const workbenchRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const [dragPosition, setDragPosition] = useState<DragPosition | null>(null);
-  const cards = [noun, verb].filter((word): word is WordDefinition => Boolean(word));
+  const cards = [noun, verb, adjective].filter((word): word is WordDefinition => Boolean(word));
 
   const handlePointerStamp = (event: MouseEvent<HTMLDivElement>) => {
     if (isStampBlockedElement(event.target)) {
@@ -262,6 +273,9 @@ function WordCard({
         <div>
           <div className="text-xs font-semibold uppercase text-stone-500">Sentence Workbench</div>
           <div className="text-sm font-medium text-stone-500">Drag words into reading order.</div>
+          {adjectiveFeedback ? (
+            <div className="mt-1 text-xs font-bold text-[#6f4f24]">{adjectiveFeedback}</div>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
@@ -364,7 +378,62 @@ function WordCard({
           </div>
         ) : null}
 
-        {visiblePathEvent ? (
+        {wheelReveal ? (
+          <section
+            data-no-stamp="true"
+            className="absolute left-1/2 top-1/2 z-10 grid w-[min(82%,18rem)] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-md border-2 border-[#8260a8] bg-[#fff7fb] p-4 text-center shadow-[0_10px_28px_rgba(73,45,93,0.28)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={`wheel-disc ${wheelReveal.status === 'spinning' ? 'wheel-disc-spinning' : ''}`}>
+              <span>?</span>
+            </div>
+            <div className="mt-3 font-serif text-lg font-bold text-[#49335d]">
+              {wheelReveal.status === 'spinning' ? 'The wheel is deciding...' : wheelReveal.resultLabel}
+            </div>
+          </section>
+        ) : visiblePathEvent?.type === 'dream-facedown-truth' ? (
+          <section
+            data-no-stamp="true"
+            className="absolute left-1/2 top-1/2 z-10 w-[min(90%,22rem)] -translate-x-1/2 -translate-y-1/2 rounded-md border-2 border-[#8260a8] bg-[#fff7fb] p-3 shadow-[0_10px_28px_rgba(73,45,93,0.28)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="text-center">
+              <div className="font-serif text-lg font-bold text-[#49335d]">Facedown Truth</div>
+              <div className="mt-1 text-xs font-semibold text-stone-500">Choose one card</div>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {[0, 1, 2].map((cardIndex) => (
+                <button
+                  key={cardIndex}
+                  type="button"
+                  data-no-stamp="true"
+                  aria-label={`Choose facedown card ${cardIndex + 1}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onFacedownTruthPick(visiblePathEvent, cardIndex);
+                  }}
+                  className="grid aspect-[2/3] min-h-24 place-items-center rounded border-2 border-[#6d4a9a] bg-[#e8dcf2] text-2xl font-black text-[#6d4a9a] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#f1e9fb] active:translate-y-0"
+                >
+                  ?
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : visiblePathEvent?.type === 'dream-wheel-of-meaning' ? (
+          <button
+            type="button"
+            data-no-stamp="true"
+            onClick={(event) => {
+              event.stopPropagation();
+              onWheelSpin(visiblePathEvent);
+            }}
+            className="absolute left-1/2 top-1/2 z-10 grid w-36 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-md border-2 border-[#8260a8] bg-[#fff7fb] p-3 text-center shadow-[0_10px_28px_rgba(73,45,93,0.28)] transition hover:bg-white active:scale-95"
+          >
+            <span className="wheel-disc wheel-disc-small"><span>?</span></span>
+            <span className="mt-2 text-sm font-black text-[#49335d]">Wheel of Meaning</span>
+            <span className="text-xs font-bold text-stone-500">Spin the wheel</span>
+          </button>
+        ) : visiblePathEvent ? (
           <button
             type="button"
             data-no-stamp="true"

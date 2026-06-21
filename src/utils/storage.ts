@@ -10,6 +10,9 @@ function isWordId(value: unknown): value is WordId {
     value === 'apple' ||
     value === 'world' ||
     value === 'understand' ||
+    value === 'and' ||
+    value === 'heavy' ||
+    value === 'still' ||
     value === 'farm' ||
     value === 'seed' ||
     value === 'soil' ||
@@ -104,6 +107,7 @@ function isSavedGameState(value: unknown): value is SerializedGameState {
     isWordId(saved.activeWordId) &&
     (isWordId(saved.activeNounId) || saved.activeNounId === undefined) &&
     (isWordId(saved.activeVerbId) || saved.activeVerbId === null || saved.activeVerbId === undefined) &&
+    (isWordId(saved.activeAdjectiveId) || saved.activeAdjectiveId === null || saved.activeAdjectiveId === undefined) &&
     Array.isArray(saved.unlockedWordIds) &&
     saved.unlockedWordIds.every(isWordId) &&
     (isWordId(saved.chosenFirstPath) || saved.chosenFirstPath === null) &&
@@ -115,10 +119,17 @@ function isSavedGameState(value: unknown): value is SerializedGameState {
     ) &&
     (typeof saved.fiftyMeaningMilestoneGranted === 'boolean' || saved.fiftyMeaningMilestoneGranted === undefined) &&
     (typeof saved.hundredMeaningMilestoneGranted === 'boolean' || saved.hundredMeaningMilestoneGranted === undefined) &&
+    (
+      typeof saved.twoHundredFiftyMeaningMilestoneGranted === 'boolean' ||
+      saved.twoHundredFiftyMeaningMilestoneGranted === undefined
+    ) &&
+    (typeof saved.thousandMeaningMilestoneGranted === 'boolean' || saved.thousandMeaningMilestoneGranted === undefined) &&
     (typeof saved.manualStampCount === 'number' || saved.manualStampCount === undefined) &&
     (typeof saved.activeWordStartedAt === 'number' || saved.activeWordStartedAt === undefined) &&
     (typeof saved.stampUpgradeLevel === 'number' || saved.stampUpgradeLevel === undefined) &&
     (typeof saved.filingUpgradeLevel === 'number' || saved.filingUpgradeLevel === undefined) &&
+    (typeof saved.stampForceLevel === 'number' || saved.stampForceLevel === undefined) &&
+    (typeof saved.filingDepthLevel === 'number' || saved.filingDepthLevel === undefined) &&
     workbenchLayoutValid &&
     workbenchBoardValid &&
     (typeof saved.dreamUnlocked === 'boolean' || saved.dreamUnlocked === undefined) &&

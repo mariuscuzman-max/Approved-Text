@@ -1,6 +1,6 @@
 import type { WordDefinition } from '../types/game';
 import type { BigNumber, BigNumberSource } from './bigNumber.ts';
-import { add, max as bigMax, mul, pow, toDecimal } from './bigNumber.ts';
+import { add, gte, max as bigMax, mul, pow, toDecimal } from './bigNumber.ts';
 import { getStreamDrizzlePassiveSeconds, STREAM_DRIZZLE_INTERVAL_SECONDS } from './stream.ts';
 
 const UPGRADE_BASE_COST = 1;
@@ -13,11 +13,35 @@ const FLOW_IDLE_MULTIPLIER = 1.25;
 const RIVER_PASSIVE_GROWTH_PER_MINUTE = 0.01;
 export const RIVER_PASSIVE_GROWTH_CAP = 2;
 const ROOT_PROC_INTERVAL = 25;
+export const PERCENTAGE_UPGRADE_UNLOCK_MEANING = 1000;
+const PERCENTAGE_UPGRADE_BASE_COST = 1000;
+const PERCENTAGE_UPGRADE_COST_GROWTH = 1.15;
+const PERCENTAGE_UPGRADE_BONUS_PER_LEVEL = 0.05;
 
 export const UPGRADE_MILESTONES = [10, 25, 50, 100, 500, 1000];
 
 export function getUpgradeCost(level: number): BigNumber {
   return mul(UPGRADE_BASE_COST, pow(UPGRADE_COST_GROWTH, level));
+}
+
+export function isPercentageUpgradeUnlocked(totalMeaningEarned: BigNumberSource): boolean {
+  return gte(totalMeaningEarned, PERCENTAGE_UPGRADE_UNLOCK_MEANING);
+}
+
+export function getPercentageUpgradeCost(level: number): BigNumber {
+  return mul(PERCENTAGE_UPGRADE_BASE_COST, pow(PERCENTAGE_UPGRADE_COST_GROWTH, level));
+}
+
+export function getPercentageUpgradeMultiplier(level: number): number {
+  return 1 + Math.max(0, level) * PERCENTAGE_UPGRADE_BONUS_PER_LEVEL;
+}
+
+export function applyStampForce(gain: BigNumberSource, level: number): BigNumber {
+  return mul(gain, getPercentageUpgradeMultiplier(level));
+}
+
+export function applyFilingDepth(gain: BigNumberSource, level: number): BigNumber {
+  return mul(gain, getPercentageUpgradeMultiplier(level));
 }
 
 export function applyUpgradeCostFloor(
@@ -73,6 +97,40 @@ export function getVerbNounBaseMultiplier(verb: WordDefinition | null): number {
 
 export function getVerbEffectMultiplier(verb: WordDefinition | null): number {
   return getVerbNounBaseMultiplier(verb);
+}
+
+export function getAdjectiveTapBaseMultiplier(
+  word: WordDefinition,
+  adjective: WordDefinition | null,
+): number {
+  if (
+    adjective?.implemented &&
+    adjective.specialEffectType === 'adjective_tap_base_multiplier' &&
+    adjective.pathId === 'manual' &&
+    word.pathId === 'manual' &&
+    typeof adjective.specialEffectValue === 'number'
+  ) {
+    return adjective.specialEffectValue;
+  }
+
+  return 1;
+}
+
+export function getAdjectivePassiveBaseMultiplier(
+  word: WordDefinition,
+  adjective: WordDefinition | null,
+): number {
+  if (
+    adjective?.implemented &&
+    adjective.specialEffectType === 'adjective_passive_base_multiplier' &&
+    adjective.pathId === 'idle' &&
+    word.pathId === 'idle' &&
+    typeof adjective.specialEffectValue === 'number'
+  ) {
+    return adjective.specialEffectValue;
+  }
+
+  return 1;
 }
 
 function applyVerbToBonusMultiplier(multiplier: number, verb: WordDefinition | null): number {
@@ -244,12 +302,14 @@ export function getTapGain(
   word: WordDefinition,
   stampUpgradeLevel: number,
   verb: WordDefinition | null = null,
+  adjective: WordDefinition | null = null,
 ): BigNumber {
   const verbNounBaseMultiplier = getVerbNounBaseMultiplier(verb);
+  const adjectiveBaseMultiplier = getAdjectiveTapBaseMultiplier(word, adjective);
 
   return mul(
     add(
-      mul(word.tapValue, verbNounBaseMultiplier),
+      mul(word.tapValue, verbNounBaseMultiplier * adjectiveBaseMultiplier),
       getEffectiveStampUpgradeBonus(stampUpgradeLevel, word, verb),
     ),
     getPathTapMultiplier(word),
@@ -262,13 +322,15 @@ export function getPassiveGain(
   activeWordStartedAt = Date.now(),
   now = Date.now(),
   verb: WordDefinition | null = null,
+  adjective: WordDefinition | null = null,
 ): BigNumber {
   const verbNounBaseMultiplier = getVerbNounBaseMultiplier(verb);
+  const adjectiveBaseMultiplier = getAdjectivePassiveBaseMultiplier(word, adjective);
 
   return mul(
     mul(
       add(
-        mul(word.passiveValue, verbNounBaseMultiplier),
+        mul(word.passiveValue, verbNounBaseMultiplier * adjectiveBaseMultiplier),
         getEffectiveFilingUpgradeBonus(filingUpgradeLevel, word, verb),
       ),
       getPathIdleMultiplier(word),
@@ -332,6 +394,14 @@ export function getActiveWordPowerLabel(
 
   if (word.id === 'understand') {
     return 'Doubles the active noun base tap and passive values';
+  }
+
+  if (word.id === 'heavy') {
+    return 'Next Farm noun gains +50% base tap value';
+  }
+
+  if (word.id === 'still') {
+    return 'Next Water noun gains +50% base passive value';
   }
 
   return null;

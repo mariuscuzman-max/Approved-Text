@@ -1,5 +1,12 @@
 import { getWordById } from '../data/words.ts';
-import type { GameState, SerializedGameState, WordId, WorkbenchCardPosition, WorkbenchLayout } from '../types/game';
+import type {
+  GameState,
+  SerializedGameState,
+  WordId,
+  WorkbenchCardPosition,
+  WorkbenchGridSlot,
+  WorkbenchLayout,
+} from '../types/game';
 import { max, toDecimal } from './bigNumber.ts';
 import { createDefaultGlobalStats, mergeGlobalStats } from './stats.ts';
 import {
@@ -49,6 +56,7 @@ export function createDefaultState(): GameState {
     meaning: toDecimal(0),
     activeNounId: 'world',
     activeVerbId: null,
+    activeAdjectiveId: null,
     activeWordId: 'world',
     unlockedWordIds: ['world'],
     chosenFirstPath: null,
@@ -57,10 +65,14 @@ export function createDefaultState(): GameState {
     twentyFiveMeaningMilestoneGranted: false,
     fiftyMeaningMilestoneGranted: false,
     hundredMeaningMilestoneGranted: false,
+    twoHundredFiftyMeaningMilestoneGranted: false,
+    thousandMeaningMilestoneGranted: false,
     manualStampCount: 0,
     activeWordStartedAt: now,
     stampUpgradeLevel: 0,
     filingUpgradeLevel: 0,
+    stampForceLevel: 0,
+    filingDepthLevel: 0,
     workbenchLayout: DEFAULT_WORKBENCH_LAYOUT,
     workbenchBoard: createDefaultWorkbenchBoard(),
     dreamUnlocked: false,
@@ -102,6 +114,7 @@ export function mergeSavedState(saved: GameState | SerializedGameState | null): 
   const savedActiveWord = getWordById(migratedActiveWordId);
   const migratedSavedActiveNounId = migrateStarterWordId(saved.activeNounId);
   const migratedSavedActiveVerbId = migrateStarterWordId(saved.activeVerbId);
+  const migratedSavedActiveAdjectiveId = migrateStarterWordId(saved.activeAdjectiveId);
   const activeNounIdFromSave = migratedSavedActiveNounId ?? (savedActiveWord.type === 'noun' ? migratedActiveWordId : 'world');
   const activeVerbIdFromSave = migratedSavedActiveVerbId ?? (savedActiveWord.type === 'verb' ? migratedActiveWordId : null);
   const activeNounId = unlockedWordIds.includes(activeNounIdFromSave) && getWordById(activeNounIdFromSave).type === 'noun'
@@ -111,20 +124,29 @@ export function mergeSavedState(saved: GameState | SerializedGameState | null): 
     activeVerbIdFromSave && unlockedWordIds.includes(activeVerbIdFromSave) && getWordById(activeVerbIdFromSave).type === 'verb'
       ? activeVerbIdFromSave
       : null;
+  const activeAdjectiveId =
+    migratedSavedActiveAdjectiveId &&
+    unlockedWordIds.includes(migratedSavedActiveAdjectiveId) &&
+    getWordById(migratedSavedActiveAdjectiveId).type === 'adjective'
+      ? migratedSavedActiveAdjectiveId
+      : null;
+
+  const savedWorkbenchBoard = saved.workbenchBoard ?? createDefaultWorkbenchBoard();
+  const requiredUnlockedSlots = Array.from(new Set([
+    ...savedWorkbenchBoard.unlockedSlots,
+    ...(activeVerbId ? [1] : []),
+    ...(activeAdjectiveId ? [2] : []),
+  ])) as WorkbenchGridSlot[];
 
   const workbenchBoard = unlockWorkbenchSlotsForProgress(
     migrateActiveWordsToWorkbenchBoard(
-      activeVerbId
-        ? {
-            ...(saved.workbenchBoard ?? createDefaultWorkbenchBoard()),
-            unlockedSlots: Array.from(new Set([
-              ...((saved.workbenchBoard ?? createDefaultWorkbenchBoard()).unlockedSlots),
-              1,
-            ])),
-          }
-        : saved.workbenchBoard,
+      {
+        ...savedWorkbenchBoard,
+        unlockedSlots: requiredUnlockedSlots,
+      },
       activeNounId,
       activeVerbId,
+      activeAdjectiveId,
     ),
     savedMeaning,
   );
@@ -135,6 +157,7 @@ export function mergeSavedState(saved: GameState | SerializedGameState | null): 
     meaning: savedMeaning,
     activeNounId,
     activeVerbId,
+    activeAdjectiveId,
     activeWordId: activeNounId,
     unlockedWordIds,
     passiveMeaningPerSecond: savedPassiveMeaningPerSecond,
@@ -178,10 +201,17 @@ export function mergeSavedState(saved: GameState | SerializedGameState | null): 
         saved.unlockedWordIds.includes('flow') ||
         saved.unlockedWordIds.includes('understand')
       ),
+    twoHundredFiftyMeaningMilestoneGranted:
+      saved.twoHundredFiftyMeaningMilestoneGranted ?? saved.unlockedWordIds.includes('and'),
+    thousandMeaningMilestoneGranted:
+      saved.thousandMeaningMilestoneGranted ??
+      (saved.unlockedWordIds.includes('heavy') || saved.unlockedWordIds.includes('still')),
     manualStampCount: Math.max(0, saved.manualStampCount ?? 0),
     activeWordStartedAt: saved.activeWordStartedAt ?? Date.now(),
     stampUpgradeLevel: Math.max(0, saved.stampUpgradeLevel ?? 0),
     filingUpgradeLevel: Math.max(0, saved.filingUpgradeLevel ?? 0),
+    stampForceLevel: Math.max(0, saved.stampForceLevel ?? 0),
+    filingDepthLevel: Math.max(0, saved.filingDepthLevel ?? 0),
     workbenchLayout: mergeWorkbenchLayout(saved.workbenchLayout),
     workbenchBoard,
     dreamUnlocked,

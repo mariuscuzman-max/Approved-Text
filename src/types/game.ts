@@ -1,6 +1,6 @@
 import type { BigNumber } from '../utils/bigNumber.ts';
 
-export type WordType = 'noun' | 'adjective' | 'verb';
+export type WordType = 'noun' | 'adjective' | 'verb' | 'connector';
 
 export type AppTab = 'main' | 'dictionary' | 'upgrades' | 'stats';
 
@@ -8,6 +8,9 @@ export type WordId =
   | 'apple'
   | 'world'
   | 'understand'
+  | 'and'
+  | 'heavy'
+  | 'still'
   | 'farm'
   | 'seed'
   | 'soil'
@@ -80,6 +83,7 @@ export interface ParsedSentence {
   orderedWordIds: WordId[];
   activeNounId: WordId;
   effectiveVerbId: WordId | null;
+  effectiveAdjectiveId: WordId | null;
   sentenceText: string;
   feedback: string;
 }
@@ -94,6 +98,8 @@ export type SpecialEffectType =
   | 'stamp_upgrade_discount'
   | 'filing_upgrade_discount'
   | 'periodic_passive_burst'
+  | 'adjective_tap_base_multiplier'
+  | 'adjective_passive_base_multiplier'
   | 'event_spawn_bonus'
   | 'current_meaning_tap_bonus'
   | 'harvest_word_for_run'
@@ -149,6 +155,8 @@ export interface EventStatCounts {
   water: number;
   'dream-bloom': number;
   'dream-softened-rules': number;
+  'dream-facedown-truth': number;
+  'dream-wheel-of-meaning': number;
 }
 
 export interface TrackedStats {
@@ -177,6 +185,7 @@ export interface GameState {
   meaning: BigNumber;
   activeNounId: WordId;
   activeVerbId: WordId | null;
+  activeAdjectiveId: WordId | null;
   activeWordId: WordId;
   unlockedWordIds: WordId[];
   chosenFirstPath: WordId | null;
@@ -185,10 +194,14 @@ export interface GameState {
   twentyFiveMeaningMilestoneGranted: boolean;
   fiftyMeaningMilestoneGranted: boolean;
   hundredMeaningMilestoneGranted: boolean;
+  twoHundredFiftyMeaningMilestoneGranted: boolean;
+  thousandMeaningMilestoneGranted: boolean;
   manualStampCount: number;
   activeWordStartedAt: number;
   stampUpgradeLevel: number;
   filingUpgradeLevel: number;
+  stampForceLevel: number;
+  filingDepthLevel: number;
   workbenchLayout: WorkbenchLayout;
   workbenchBoard: WorkbenchBoard;
   dreamUnlocked: boolean;
@@ -231,7 +244,11 @@ export interface StampEffect {
 }
 
 export type PathEventType = 'farm' | 'water';
-export type DreamEventType = 'dream-bloom' | 'dream-softened-rules';
+export type DreamEventType =
+  | 'dream-bloom'
+  | 'dream-softened-rules'
+  | 'dream-facedown-truth'
+  | 'dream-wheel-of-meaning';
 export type VisibleEventType = PathEventType | DreamEventType;
 
 export interface VisiblePathEvent {
@@ -248,6 +265,12 @@ export interface ActivePathEvent {
   type: VisibleEventType;
   name: string;
   endsAt: number;
+  productionMultiplier?: number;
+}
+
+export interface WheelRevealState {
+  status: 'spinning' | 'revealed';
+  resultLabel: string | null;
 }
 
 export interface UpgradeDefinition {

@@ -14,8 +14,11 @@
 * 1 Meaning: first path choice.
 * 10 Meaning: next word in chosen path.
 * 100 Meaning: first major structural unlock, likely second sentence slot.
-* 1,000 Meaning: first modifier/early combo layer.
-* 10,000 Meaning: stronger path synergy.
+* 250 Meaning: unlock And as a planned grammar word.
+* 500 Meaning: unlock the third board slot.
+* 1,000 Meaning: unlock Heavy and Still as the first adjective modifier layer.
+* 2,000 Meaning: Oak/Lake flat-stat word tier.
+* 10,000 Meaning: next progression wall and stronger path synergy.
 * 100,000 Meaning: automation or major acceleration tool.
 * 1,000,000 Meaning: first prestige/New Edition territory.
 * 1B+ Meaning: deep systems, grammar/reality editing later.

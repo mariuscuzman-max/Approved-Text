@@ -7,6 +7,8 @@ export const WORKBENCH_GRID_SIZE = 3;
 export const WORKBENCH_SLOT_COUNT = 9;
 export const STARTING_WORKBENCH_SLOT: WorkbenchGridSlot = 0;
 export const FIRST_VERB_WORKBENCH_SLOT: WorkbenchGridSlot = 1;
+export const THIRD_WORKBENCH_SLOT: WorkbenchGridSlot = 2;
+export const FIRST_ADJECTIVE_WORKBENCH_SLOT: WorkbenchGridSlot = 2;
 
 export function createDefaultWorkbenchBoard(): WorkbenchBoard {
   return {
@@ -62,13 +64,23 @@ export function normalizeWorkbenchBoard(board: WorkbenchBoard | undefined): Work
 }
 
 export function unlockWorkbenchSlotsForProgress(board: WorkbenchBoard, meaning: BigNumberSource): WorkbenchBoard {
-  if (lt(meaning, 100) || board.unlockedSlots.includes(FIRST_VERB_WORKBENCH_SLOT)) {
+  const unlockedSlots = new Set(board.unlockedSlots);
+
+  if (!lt(meaning, 100)) {
+    unlockedSlots.add(FIRST_VERB_WORKBENCH_SLOT);
+  }
+
+  if (!lt(meaning, 500)) {
+    unlockedSlots.add(THIRD_WORKBENCH_SLOT);
+  }
+
+  if (unlockedSlots.size === board.unlockedSlots.length) {
     return board;
   }
 
   return {
     ...board,
-    unlockedSlots: [...board.unlockedSlots, FIRST_VERB_WORKBENCH_SLOT].sort((a, b) => a - b) as WorkbenchGridSlot[],
+    unlockedSlots: Array.from(unlockedSlots).sort((a, b) => a - b) as WorkbenchGridSlot[],
   };
 }
 
@@ -76,6 +88,7 @@ export function migrateActiveWordsToWorkbenchBoard(
   board: WorkbenchBoard | undefined,
   activeNounId: WordId,
   activeVerbId: WordId | null,
+  activeAdjectiveId: WordId | null = null,
 ): WorkbenchBoard {
   const nextBoard = normalizeWorkbenchBoard(board);
   const placements = { ...nextBoard.placements };
@@ -90,6 +103,14 @@ export function migrateActiveWordsToWorkbenchBoard(
     !Object.prototype.hasOwnProperty.call(placements, activeVerbId)
   ) {
     placements[activeVerbId] = FIRST_VERB_WORKBENCH_SLOT;
+  }
+
+  if (
+    activeAdjectiveId &&
+    nextBoard.unlockedSlots.includes(FIRST_ADJECTIVE_WORKBENCH_SLOT) &&
+    !Object.prototype.hasOwnProperty.call(placements, activeAdjectiveId)
+  ) {
+    placements[activeAdjectiveId] = FIRST_ADJECTIVE_WORKBENCH_SLOT;
   }
 
   return {
@@ -172,13 +193,32 @@ export function parseWorkbenchSentence(
     ? orderedWordIds[firstVerbIndex]
     : null;
   const activeNounId = nounAfterVerbId ?? firstNounId;
+  const firstAdjectiveIndex = orderedWordIds.findIndex((wordId) => getWordById(wordId).type === 'adjective');
+  const nounAfterAdjectiveId = firstAdjectiveIndex >= 0
+    ? orderedWordIds.slice(firstAdjectiveIndex + 1).find((wordId) => getWordById(wordId).type === 'noun') ?? null
+    : null;
+  const effectiveAdjectiveId = nounAfterAdjectiveId === activeNounId
+    ? orderedWordIds[firstAdjectiveIndex]
+    : null;
   const sentenceText = orderedWordIds.map((wordId) => getWordById(wordId).text).join(' ');
+
+  if (effectiveAdjectiveId && nounAfterAdjectiveId) {
+    return {
+      orderedWordIds,
+      activeNounId,
+      effectiveVerbId,
+      effectiveAdjectiveId,
+      sentenceText,
+      feedback: `${getWordById(effectiveAdjectiveId).text} modifies ${getWordById(nounAfterAdjectiveId).text}.`,
+    };
+  }
 
   if (effectiveVerbId && nounAfterVerbId) {
     return {
       orderedWordIds,
       activeNounId,
       effectiveVerbId,
+      effectiveAdjectiveId: null,
       sentenceText,
       feedback: `Sentence: ${getWordById(effectiveVerbId).text} ${getWordById(nounAfterVerbId).text}`,
     };
@@ -189,6 +229,7 @@ export function parseWorkbenchSentence(
       orderedWordIds,
       activeNounId,
       effectiveVerbId: null,
+      effectiveAdjectiveId: null,
       sentenceText,
       feedback: orderedWordIds.length > 1
         ? 'Sentence inactive: place a verb before a noun.'
@@ -200,6 +241,7 @@ export function parseWorkbenchSentence(
     orderedWordIds,
     activeNounId,
     effectiveVerbId: null,
+    effectiveAdjectiveId: null,
     sentenceText,
     feedback: sentenceText || getWordById(fallbackNounId).text,
   };

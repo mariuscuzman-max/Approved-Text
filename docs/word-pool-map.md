@@ -17,6 +17,7 @@ This is a planning reference for the first shared, Farm, Flow, and Dream word po
 | ---: | --- | --- | --- | ---: | ---: | --- | --- |
 | 0 | World | noun | Starter / Universal | 0.01 | 0 | The first word. A small beginning for all Meaning. | Implemented |
 | 100 | Understand | verb | Universal | 0 | 0 | Doubles the next noun's base values and supported special-effect magnitude | Implemented |
+| 250 | And | connector | Grammar / Universal | 0 | 0 | Planned connector for future sentence grammar | Planned, unlockable |
 
 ## Farm / Ground Path
 
@@ -31,6 +32,8 @@ Role: active/manual progression, tapping power, stamping events, and strong acti
 | 100 | Grow | verb | Farm / Ground Path | 0.12 | 0 | Adds 0.5% of current Meaning to tap gain | Planned |
 | 500 | Harvest | verb | Farm / Ground Path | 0.22 | 0 | Once per run, harvest a paired word and retain its base production until reset | Planned |
 | 1,000 | Orchard | noun | Farm / Ground Path | 0.40 | 0 | +10% total tap gain | Planned |
+| 1,000 | Heavy | adjective | Farm / Ground Path | 0 | 0 | Next Farm noun gains +50% base tap value | Implemented |
+| 2,000 | Oak | noun | Farm / Ground Path | 0.90 | 0 | High flat tap value with no special power | Planned |
 | 5,000 | Plow | verb | Farm / Ground Path | 0.75 | 0 | Buying Stamp Upgrade has chance for +1 extra level | Planned |
 | 10,000 | Fertile | adjective | Farm / Ground Path | 1.40 | 0 | Improves Farm sentence synergies later | Planned |
 | 50,000 | Season | noun | Farm / Ground Path | 2.50 | 0 | 60-second tap cycle moving from x0.5 to x2.0 | Planned |
@@ -50,6 +53,8 @@ Role: passive/idle progression, Meaning/sec, waiting and returning, and efficien
 | 1,000 | Pour | verb | Water / Flow Path | 0 | 0 | Converts a percentage of idle gain into tap power | Planned |
 | 500 | Reservoir | noun | Water / Flow Path | 0.005 | 0.12 | Stores bonus Meaning while idle later | Planned |
 | 1,000 | Tide | noun | Water / Flow Path | 0.005 | 0.30 | Flow event bonus stronger | Planned |
+| 1,000 | Still | adjective | Water / Flow Path | 0 | 0 | Next Water noun gains +50% base passive value | Implemented |
+| 2,000 | Lake | noun | Water / Flow Path | 0.005 | 0.75 | High flat passive value with no special power | Planned |
 | 5,000 | Current | noun | Water / Flow Path | 0.005 | 0.75 | Flow events last longer | Planned |
 | 10,000 | Flood | verb | Water / Flow Path | 0.005 | 1.80 | Passive bursts every 30 seconds later | Planned |
 | 50,000 | Ocean | noun | Water / Flow Path | 0.005 | 4.00 | +10% total passive gain | Planned |
@@ -63,7 +68,7 @@ Role: later random events, burst gains, strange synergies, and unstable high-val
 | 100 | Slumber | noun | Dream / Chance Path | 0.03 | 0.03 | Events appear 30% more often | Implemented |
 | 100 | Dream | noun | Dream / Chance Path | 0.01 | 0.01 | Unlocks Dream-style random events later | Planned |
 | 250 | Echo | noun | Dream / Chance Path | 0.01 | 0.01 | Recursive 50% extra-tap chance, capped at 10 | Planned |
-| 500 | Clock | noun | Dream / Chance Path | 0.01 | 0.01 | Every 24 seconds, 24% chance for a time-based Meaning reward | Planned |
+| 1,000 | Clock | noun | Dream / Chance Path | 0.01 | 0.01 | Every 24 seconds, 24% chance for a time-based Meaning reward | Planned |
 | 1,000 | Remember | verb | Dream / Chance Path | 0 | 0 | Chance-based noun effects +20% | Planned |
 | 5,000 | Acquire | verb | Dream / Chance Path | 0 | 0 | May allow learning words from other paths | Planned |
 | 500 | Chance | noun | Dream / Chance Path | 0.01 | 0.01 | Random event rewards +10% | Planned |

@@ -72,7 +72,6 @@ These systems should not be part of the current ground-level prototype:
 * Archive
 * Redaction
 * World reports
-* Adjectives as active modifiers
 * Verbs as active rules
 * Sentence system
 * Lore-heavy systems

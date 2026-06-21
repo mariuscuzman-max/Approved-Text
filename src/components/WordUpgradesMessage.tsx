@@ -11,6 +11,8 @@ import {
   getFilingUpgradeDiscountModifierLabel,
   getNextUpgradeMilestone,
   getPathBonusLabel,
+  getPercentageUpgradeCost,
+  getPercentageUpgradeMultiplier,
   getStampUpgradeBonusModifierLabel,
   getStampUpgradeDiscountModifierLabel,
   getUpgradeBaseBonus,
@@ -23,9 +25,74 @@ interface WordUpgradesMessageProps {
   activeVerb: WordDefinition | null;
   stampUpgradeLevel: number;
   filingUpgradeLevel: number;
+  stampForceLevel: number;
+  filingDepthLevel: number;
+  percentageUpgradesUnlocked: boolean;
   upgradeCostMultiplier: number;
   onBuyStampUpgrade: () => void;
   onBuyFilingUpgrade: () => void;
+  onBuyStampForce: () => void;
+  onBuyFilingDepth: () => void;
+}
+
+function PercentageUpgradeCard({
+  name,
+  description,
+  level,
+  unlocked,
+  meaning,
+  onBuy,
+}: {
+  name: string;
+  description: string;
+  level: number;
+  unlocked: boolean;
+  meaning: BigNumberSource;
+  onBuy: () => void;
+}) {
+  const cost = getPercentageUpgradeCost(level);
+  const canAfford = unlocked && gte(meaning, cost);
+  const totalBonusPercent = level * 5;
+
+  return (
+    <article className={`rounded-lg border p-3 shadow-sm ${
+      unlocked ? 'border-[#decaa9] bg-white' : 'border-stone-300 bg-stone-100 text-stone-500'
+    }`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className={`text-lg font-bold ${unlocked ? 'text-[#27211a]' : 'text-stone-500'}`}>{name}</h2>
+          <p className="mt-1 text-sm leading-5 text-stone-600">{description}</p>
+        </div>
+        <span className="rounded border border-stone-300 bg-white/70 px-2 py-1 text-xs font-bold text-stone-600">
+          Lv {level}
+        </span>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+        <div className="rounded border border-stone-300 bg-white/60 px-2 py-2">
+          <dt className="text-xs font-bold uppercase text-stone-500">Total bonus</dt>
+          <dd className="font-bold text-[#27211a]">+{totalBonusPercent}%</dd>
+        </div>
+        <div className="rounded border border-stone-300 bg-white/60 px-2 py-2">
+          <dt className="text-xs font-bold uppercase text-stone-500">Multiplier</dt>
+          <dd className="font-bold text-[#27211a]">x{getPercentageUpgradeMultiplier(level).toFixed(2)}</dd>
+        </div>
+      </dl>
+
+      <button
+        type="button"
+        disabled={!canAfford}
+        onClick={onBuy}
+        className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-bold transition ${
+          canAfford
+            ? 'bg-[#2d2922] text-[#fff8e9] hover:bg-[#443d33] active:translate-y-px'
+            : 'cursor-not-allowed bg-stone-200 text-stone-500'
+        }`}
+      >
+        {unlocked ? `Buy for ${formatMeaning(cost)} Meaning` : 'Unlocks at 1.00K Meaning'}
+      </button>
+    </article>
+  );
 }
 
 function WordUpgradesMessage({
@@ -34,9 +101,14 @@ function WordUpgradesMessage({
   activeVerb,
   stampUpgradeLevel,
   filingUpgradeLevel,
+  stampForceLevel,
+  filingDepthLevel,
+  percentageUpgradesUnlocked,
   upgradeCostMultiplier,
   onBuyStampUpgrade,
   onBuyFilingUpgrade,
+  onBuyStampForce,
+  onBuyFilingDepth,
 }: WordUpgradesMessageProps) {
   const stampCost = getEffectiveStampUpgradeCost(stampUpgradeLevel, activeWord, activeVerb, upgradeCostMultiplier);
   const filingCost = getEffectiveFilingUpgradeCost(filingUpgradeLevel, activeWord, activeVerb, upgradeCostMultiplier);
@@ -180,6 +252,24 @@ function WordUpgradesMessage({
               Buy for {formatMeaning(filingCost)} Meaning
             </button>
           </article>
+
+          <PercentageUpgradeCard
+            name="Stamp Force"
+            description="Adds +5% total tap gain per level."
+            level={stampForceLevel}
+            unlocked={percentageUpgradesUnlocked}
+            meaning={meaning}
+            onBuy={onBuyStampForce}
+          />
+
+          <PercentageUpgradeCard
+            name="Filing Depth"
+            description="Adds +5% total passive gain per level."
+            level={filingDepthLevel}
+            unlocked={percentageUpgradesUnlocked}
+            meaning={meaning}
+            onBuy={onBuyFilingDepth}
+          />
         </div>
       </div>
     </section>

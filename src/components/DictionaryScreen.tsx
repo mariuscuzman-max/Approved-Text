@@ -1,29 +1,46 @@
 import { useMemo, useState } from 'react';
 import { getPathRibbonStyles, getPathThemeStyles, getWordTypeStyles } from '../data/words';
-import type { WordDefinition } from '../types/game';
+import type { WordDefinition, WordId } from '../types/game';
 import { formatMeaning, formatRate } from '../utils/format';
 
 interface DictionaryScreenProps {
   unlockedWords: WordDefinition[];
+  lockedPreviewWords: WordDefinition[];
   activeNounId: string;
   activeVerbId: string | null;
+  activeAdjectiveId: string | null;
   onSelectWord: (wordId: WordDefinition['id']) => void;
 }
 
-function DictionaryScreen({ unlockedWords, activeNounId, activeVerbId, onSelectWord }: DictionaryScreenProps) {
+function DictionaryScreen({
+  unlockedWords,
+  lockedPreviewWords,
+  activeNounId,
+  activeVerbId,
+  activeAdjectiveId,
+  onSelectWord,
+}: DictionaryScreenProps) {
   const [search, setSearch] = useState('');
   const normalizedSearch = search.trim().toLowerCase();
+  const unlockedWordIds = useMemo(
+    () => new Set<WordId>(unlockedWords.map((word) => word.id)),
+    [unlockedWords],
+  );
+  const visibleWords = useMemo(
+    () => [...unlockedWords, ...lockedPreviewWords],
+    [lockedPreviewWords, unlockedWords],
+  );
 
   const filteredWords = useMemo(() => {
     if (!normalizedSearch) {
-      return unlockedWords;
+      return visibleWords;
     }
 
-    return unlockedWords.filter((word) => {
+    return visibleWords.filter((word) => {
       const searchableText = `${word.text} ${word.type} ${word.pathLabel}`.toLowerCase();
       return searchableText.includes(normalizedSearch);
     });
-  }, [normalizedSearch, unlockedWords]);
+  }, [normalizedSearch, visibleWords]);
 
   return (
     <section className="grid h-full grid-rows-[auto_1fr] gap-3">
@@ -33,7 +50,7 @@ function DictionaryScreen({ unlockedWords, activeNounId, activeVerbId, onSelectW
             <p className="text-xs font-semibold uppercase text-stone-500">Unlocked words</p>
             <h2 className="font-serif text-2xl font-bold text-[#27211a]">Dictionary</h2>
           </div>
-          <div className="text-xs font-bold text-stone-500">{filteredWords.length}/{unlockedWords.length}</div>
+          <div className="text-xs font-bold text-stone-500">{unlockedWords.length} unlocked</div>
         </div>
 
         <input
@@ -51,15 +68,26 @@ function DictionaryScreen({ unlockedWords, activeNounId, activeVerbId, onSelectW
             (() => {
               const isActiveNoun = activeNounId === word.id;
               const isActiveVerb = activeVerbId === word.id;
-              const activeLabel = isActiveNoun ? 'Active noun' : isActiveVerb ? 'Active verb' : null;
+              const isActiveAdjective = activeAdjectiveId === word.id;
+              const isUnlocked = unlockedWordIds.has(word.id);
+              const activeLabel = isActiveNoun
+                ? 'Active noun'
+                : isActiveVerb
+                  ? 'Active verb'
+                  : isActiveAdjective
+                    ? 'Active adjective'
+                    : null;
 
               return (
             <button
               key={word.id}
               type="button"
+              disabled={!isUnlocked}
               onClick={() => onSelectWord(word.id)}
               className={`rounded-lg border-2 p-2 text-left shadow-sm transition ${getPathThemeStyles(word.pathTheme)} ${
-                isActiveNoun || isActiveVerb
+                !isUnlocked
+                  ? 'cursor-not-allowed grayscale opacity-60'
+                  : isActiveNoun || isActiveVerb || isActiveAdjective
                   ? 'ring-2 ring-[#9a6a36] ring-offset-1'
                   : 'hover:brightness-[1.02]'
               }`}
@@ -78,6 +106,11 @@ function DictionaryScreen({ unlockedWords, activeNounId, activeVerbId, onSelectW
                   {activeLabel ? (
                     <div className="mt-1 inline-block rounded border border-[#cbb58f] bg-white/80 px-2 py-0.5 text-[0.65rem] font-bold text-[#6f4f24]">
                       {activeLabel}
+                    </div>
+                  ) : null}
+                  {!isUnlocked ? (
+                    <div className="mt-1 inline-block rounded border border-stone-300 bg-stone-100 px-2 py-0.5 text-[0.65rem] font-bold text-stone-500">
+                      Unlocks at 1.00K Meaning
                     </div>
                   ) : null}
                 </div>

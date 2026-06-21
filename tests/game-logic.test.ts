@@ -8,22 +8,31 @@ import {
   formatRate,
   gte,
   isDecimal,
+  mul,
   sub,
   toDecimal,
 } from '../src/utils/bigNumber.ts';
 import type { BigNumberSource } from '../src/utils/bigNumber.ts';
 import { parseSavedGameState, serializeGameState } from '../src/utils/storage.ts';
-import { getHundredMeaningUnlockWordIds } from '../src/utils/milestones.ts';
+import {
+  getDreamMilestoneUnlockWordIds,
+  getHundredMeaningUnlockWordIds,
+  getThousandMeaningUnlockWordIds,
+  getTwoHundredFiftyMeaningUnlockWordIds,
+} from '../src/utils/milestones.ts';
 import { canTriggerDreamUnlock, unlockDreamLayer } from '../src/utils/dream.ts';
 import {
   FIRST_VERB_WORKBENCH_SLOT,
   STARTING_WORKBENCH_SLOT,
+  THIRD_WORKBENCH_SLOT,
   createDefaultWorkbenchBoard,
   moveWorkbenchWordToSlot,
   parseWorkbenchSentence,
   unlockWorkbenchSlotsForProgress,
 } from '../src/utils/workbench.ts';
 import {
+  applyFilingDepth,
+  applyStampForce,
   applyUpgradeCostFloor,
   getActiveWordPassiveMultiplier,
   getActiveWordPowerLabel,
@@ -33,22 +42,39 @@ import {
   getEffectiveStampUpgradeBonus,
   getEffectiveStampUpgradeCost,
   getPassiveGain,
+  getPercentageUpgradeCost,
+  getPercentageUpgradeMultiplier,
   getRiverPassiveIncrease,
   getRootCharge,
   getRootChargeLabel,
   getTapGain,
   getUpgradeCost,
+  isPercentageUpgradeUnlocked,
+  PERCENTAGE_UPGRADE_UNLOCK_MEANING,
   RIVER_PASSIVE_GROWTH_CAP,
 } from '../src/utils/upgrades.ts';
 import {
+  createFacedownTruthActiveEvent,
+  createVisiblePathEvent,
+  createWheelTimedActiveEvent,
+  FACEDOWN_TRUTH_DURATION_SECONDS,
+  FACEDOWN_TRUTH_REWARDS,
   getEventSpawnMultiplier,
   getAvailableEventTypes,
+  getDreamProductionMultiplier,
+  getFacedownTruthProductionMultiplier,
   getFarmEventTapMultiplier,
   getFlowEventIdleMultiplier,
   getMeaningBloomGain,
   MIN_EVENT_DELAY_SECONDS,
   getNextPathEventDelayMs,
+  getRandomVisibleEventType,
   getSoftenedRulesUpgradeCostMultiplier,
+  getWheelInstantMeaningGain,
+  selectWheelOfMeaningReward,
+  selectFacedownTruthMultiplier,
+  WHEEL_OF_MEANING_REWARDS,
+  WHEEL_TIMED_MULTIPLIER_DURATION_SECONDS,
 } from '../src/utils/pathEvents.ts';
 import { shouldStampFromPointerInteraction } from '../src/utils/stampInput.ts';
 import type { GameState, WorkbenchBoard } from '../src/types/game.ts';
@@ -90,6 +116,8 @@ const stream = getWordById('stream');
 const understand = getWordById('understand');
 const world = getWordById('world');
 const slumber = getWordById('slumber');
+const heavy = getWordById('heavy');
+const still = getWordById('still');
 
 assert.equal(FIRST_CHOICE_COST, 1);
 assert.equal(isFirstPathChoiceUnlocked(0.99), false);
@@ -115,7 +143,7 @@ assert.equal(new Set(wordIds).size, wordIds.length);
 for (const word of words) {
   assert.ok(word.id.length > 0);
   assert.ok(word.text.length > 0);
-  assert.ok(['noun', 'verb', 'adjective'].includes(word.type));
+  assert.ok(['noun', 'verb', 'adjective', 'connector'].includes(word.type));
   assert.ok(word.pathId.length > 0);
   assert.ok(word.pathLabel.length > 0);
   assert.ok(word.pathTheme.length > 0);
@@ -171,6 +199,10 @@ nearlyEqual(defaultState.stats.meaningEarnedFromPassive, 0);
 nearlyEqual(defaultState.stats.meaningEarnedFromEvents, 0);
 assert.equal(defaultState.stats.manualStamps, 0);
 assert.equal(defaultState.stats.totalPlayTimeMs, 0);
+assert.equal(defaultState.stampForceLevel, 0);
+assert.equal(defaultState.filingDepthLevel, 0);
+assert.equal(defaultState.activeAdjectiveId, null);
+assert.equal(defaultState.thousandMeaningMilestoneGranted, false);
 
 const defaultSessionStats = createDefaultSessionStats(1000);
 assert.equal(defaultSessionStats.startedAt, 1000);
@@ -204,6 +236,27 @@ assert.equal(understand.type, 'verb');
 assert.equal(understand.specialEffectType, 'double_noun_base');
 assert.deepEqual(getHundredMeaningUnlockWordIds('farm'), ['grow', 'understand']);
 assert.deepEqual(getHundredMeaningUnlockWordIds('water'), ['flow', 'understand']);
+const andWord = getWordById('and');
+assert.equal(andWord.type, 'connector');
+assert.equal(andWord.unlockMeaning, 250);
+assert.equal(andWord.implemented, false);
+assert.deepEqual(getTwoHundredFiftyMeaningUnlockWordIds(), ['and']);
+assert.deepEqual(getThousandMeaningUnlockWordIds(), ['heavy', 'still']);
+assert.equal(heavy.type, 'adjective');
+assert.equal(heavy.unlockMeaning, 1000);
+assert.equal(heavy.implemented, true);
+assert.equal(still.type, 'adjective');
+assert.equal(still.unlockMeaning, 1000);
+assert.equal(still.implemented, true);
+assert.equal(getWordById('clock').unlockMeaning, 1000);
+assert.equal(getWordById('oak').unlockMeaning, 2000);
+assert.equal(getWordById('lake').unlockMeaning, 2000);
+assert.deepEqual(getDreamMilestoneUnlockWordIds(249, true), []);
+assert.deepEqual(getDreamMilestoneUnlockWordIds(250, false), []);
+assert.deepEqual(getDreamMilestoneUnlockWordIds(250, true), ['echo']);
+assert.deepEqual(getDreamMilestoneUnlockWordIds(999, true), ['echo']);
+assert.deepEqual(getDreamMilestoneUnlockWordIds(1000, false), []);
+assert.deepEqual(getDreamMilestoneUnlockWordIds(1000, true), ['echo', 'clock']);
 nearlyEqual(water.passiveValue, 0.003);
 nearlyEqual(rain.passiveValue, 0.006);
 nearlyEqual(world.tapValue, 0.01);
@@ -239,6 +292,10 @@ assert.equal(migratedNounSave.activeNounId, 'seed');
 assert.equal(migratedNounSave.activeVerbId, null);
 assert.ok(migratedNounSave.unlockedWordIds.includes('world'));
 assert.ok(!migratedNounSave.unlockedWordIds.includes('apple'));
+assert.equal(migratedNounSave.stampForceLevel, 0);
+assert.equal(migratedNounSave.filingDepthLevel, 0);
+assert.equal(migratedNounSave.activeAdjectiveId, null);
+assert.equal(migratedNounSave.thousandMeaningMilestoneGranted, false);
 assert.equal(migratedNounSave.stats.manualStamps, 0);
 nearlyEqual(migratedNounSave.stats.meaningEarnedFromTapping, 0);
 
@@ -283,6 +340,29 @@ assert.equal(formatMeaning(1.23e6), '1.23M');
 assert.equal(formatMeaning('1.23e9'), '1.23e9');
 assert.equal(formatRate(0.005), '0.005');
 assert.equal(formatMeaning(getUpgradeCost(0)), '1.00');
+assert.equal(PERCENTAGE_UPGRADE_UNLOCK_MEANING, 1000);
+assert.equal(isPercentageUpgradeUnlocked(999.99), false);
+assert.equal(isPercentageUpgradeUnlocked(1000), true);
+nearlyEqual(getPercentageUpgradeCost(0), 1000);
+nearlyEqual(getPercentageUpgradeCost(1), 1150);
+nearlyEqual(getPercentageUpgradeCost(2), 1322.5);
+nearlyEqual(getPercentageUpgradeMultiplier(0), 1);
+nearlyEqual(getPercentageUpgradeMultiplier(1), 1.05);
+nearlyEqual(getPercentageUpgradeMultiplier(4), 1.2);
+nearlyEqual(applyStampForce(10, 1), 10.5);
+nearlyEqual(applyStampForce(10, 4), 12);
+nearlyEqual(applyFilingDepth(10, 1), 10.5);
+nearlyEqual(applyFilingDepth(10, 4), 12);
+assert.equal(eq(applyStampForce('1e1000', 1), '1.05e1000'), true);
+assert.equal(eq(applyFilingDepth('1e1000', 4), '1.2e1000'), true);
+
+const percentageUpgradeSave = mergeSavedState(serializeGameState({
+  ...defaultState,
+  stampForceLevel: 3,
+  filingDepthLevel: 2,
+}));
+assert.equal(percentageUpgradeSave.stampForceLevel, 3);
+assert.equal(percentageUpgradeSave.filingDepthLevel, 2);
 
 const oldStarterSave = mergeSavedState({
   ...oldNounSave,
@@ -334,10 +414,48 @@ assert.equal(canTriggerDreamUnlock(100, world, understand, true), false);
 const unlockedTwoSlotBoard = unlockWorkbenchSlotsForProgress(createDefaultWorkbenchBoard(), 100);
 assert.deepEqual(unlockedTwoSlotBoard.unlockedSlots, [0, 1]);
 assert.equal(unlockWorkbenchSlotsForProgress(createDefaultWorkbenchBoard(), 99).unlockedSlots.includes(1), false);
+assert.deepEqual(unlockWorkbenchSlotsForProgress(createDefaultWorkbenchBoard(), 499).unlockedSlots, [0, 1]);
+assert.deepEqual(unlockWorkbenchSlotsForProgress(createDefaultWorkbenchBoard(), 500).unlockedSlots, [0, 1, 2]);
+assert.equal(THIRD_WORKBENCH_SLOT, 2);
 
 const lockedMove = moveWorkbenchWordToSlot(createDefaultWorkbenchBoard(), 'world', 1);
 assert.equal(lockedMove.moved, false);
 assert.equal(lockedMove.board.placements.world, 0);
+
+const extendedWordIdSave = serializeGameState({
+  ...defaultState,
+  meaning: toDecimal(2000),
+  activeNounId: 'oak',
+  activeWordId: 'oak',
+  unlockedWordIds: ['world', 'and', 'oak', 'lake'],
+  twoHundredFiftyMeaningMilestoneGranted: true,
+});
+assert.notEqual(parseSavedGameState(extendedWordIdSave), null);
+const loadedExtendedWordIdSave = mergeSavedState(extendedWordIdSave);
+assert.ok(loadedExtendedWordIdSave.unlockedWordIds.includes('and'));
+assert.ok(loadedExtendedWordIdSave.unlockedWordIds.includes('oak'));
+assert.ok(loadedExtendedWordIdSave.unlockedWordIds.includes('lake'));
+assert.equal(loadedExtendedWordIdSave.twoHundredFiftyMeaningMilestoneGranted, true);
+
+const adjectiveSave = serializeGameState({
+  ...defaultState,
+  meaning: toDecimal(1000),
+  unlockedWordIds: ['world', 'heavy', 'still'],
+  activeAdjectiveId: 'heavy',
+  thousandMeaningMilestoneGranted: true,
+  workbenchBoard: {
+    unlockedSlots: [0, 1, 2],
+    placements: {
+      heavy: 0,
+      world: 1,
+    },
+  },
+});
+assert.notEqual(parseSavedGameState(adjectiveSave), null);
+const loadedAdjectiveSave = mergeSavedState(adjectiveSave);
+assert.equal(loadedAdjectiveSave.activeAdjectiveId, 'heavy');
+assert.ok(loadedAdjectiveSave.unlockedWordIds.includes('still'));
+assert.equal(loadedAdjectiveSave.thousandMeaningMilestoneGranted, true);
 
 const understandWorldBoard = {
   unlockedSlots: [0, 1],
@@ -370,8 +488,94 @@ assert.equal(stateAfterDream.stampUpgradeLevel, 4);
 assert.equal(stateAfterDream.filingUpgradeLevel, 3);
 assert.equal(stateAfterDream.workbenchBoard, stateBeforeDream.workbenchBoard);
 assert.equal(getUnlockedWords(stateAfterDream.unlockedWordIds).some((word) => word.id === 'slumber'), true);
-assert.deepEqual(getAvailableEventTypes('farm', true), ['farm', 'dream-bloom', 'dream-softened-rules']);
-assert.deepEqual(getAvailableEventTypes('water', true), ['water', 'dream-bloom', 'dream-softened-rules']);
+assert.deepEqual(getAvailableEventTypes(getWordById('farm'), true), ['farm']);
+assert.deepEqual(getAvailableEventTypes(water, true), ['water']);
+assert.deepEqual(getAvailableEventTypes(slumber, true), ['dream-facedown-truth']);
+assert.deepEqual(getAvailableEventTypes(slumber, false), []);
+assert.deepEqual(getAvailableEventTypes(world, true), []);
+assert.equal(getRandomVisibleEventType(getWordById('farm'), true), 'farm');
+assert.equal(getRandomVisibleEventType(water, true), 'water');
+assert.equal(getRandomVisibleEventType(slumber, true), 'dream-facedown-truth');
+
+const facedownTruthVisibleEvent = createVisiblePathEvent('dream-facedown-truth');
+assert.equal(facedownTruthVisibleEvent.name, 'Facedown Truth');
+assert.equal(facedownTruthVisibleEvent.prompt, 'Choose one card');
+assert.deepEqual(FACEDOWN_TRUTH_REWARDS, [
+  { multiplier: 2, probability: 0.6 },
+  { multiplier: 5, probability: 0.3 },
+  { multiplier: 10, probability: 0.1 },
+]);
+assert.equal(selectFacedownTruthMultiplier(0), 2);
+assert.equal(selectFacedownTruthMultiplier(0.599999), 2);
+assert.equal(selectFacedownTruthMultiplier(0.6), 5);
+assert.equal(selectFacedownTruthMultiplier(0.899999), 5);
+assert.equal(selectFacedownTruthMultiplier(0.9), 10);
+assert.equal(selectFacedownTruthMultiplier(1), 10);
+assert.equal(FACEDOWN_TRUTH_DURATION_SECONDS, 10);
+
+const facedownStart = Date.now();
+const facedownTruthActiveEvent = createFacedownTruthActiveEvent(facedownTruthVisibleEvent, 0.95);
+assert.equal(facedownTruthActiveEvent.type, 'dream-facedown-truth');
+assert.equal(facedownTruthActiveEvent.productionMultiplier, 10);
+assert.ok(facedownTruthActiveEvent.endsAt >= facedownStart + 10000);
+assert.ok(facedownTruthActiveEvent.endsAt <= Date.now() + 10000);
+assert.equal(getFacedownTruthProductionMultiplier(facedownTruthActiveEvent), 10);
+assert.equal(getFacedownTruthProductionMultiplier(null), 1);
+assert.equal(getFacedownTruthProductionMultiplier({
+  ...facedownTruthActiveEvent,
+  endsAt: Date.now() - 1,
+}), 1);
+nearlyEqual(
+  mul(getTapGain(world, 0), getFacedownTruthProductionMultiplier(facedownTruthActiveEvent)),
+  0.1,
+);
+nearlyEqual(
+  mul(getPassiveGain(water, 0, 0, 0), getFacedownTruthProductionMultiplier(facedownTruthActiveEvent)),
+  0.0375,
+);
+
+const wheelVisibleEvent = createVisiblePathEvent('dream-wheel-of-meaning');
+assert.equal(wheelVisibleEvent.name, 'Wheel of Meaning');
+assert.equal(wheelVisibleEvent.prompt, 'Spin the wheel');
+assert.deepEqual(WHEEL_OF_MEANING_REWARDS.map((reward) => reward.probability), [0.4, 0.25, 0.15, 0.1, 0.07, 0.03]);
+nearlyEqual(WHEEL_OF_MEANING_REWARDS.reduce((total, reward) => total + reward.probability, 0), 1);
+assert.equal(selectWheelOfMeaningReward(0).id, 'production-15');
+assert.equal(selectWheelOfMeaningReward(0.399999).id, 'production-15');
+assert.equal(selectWheelOfMeaningReward(0.4).id, 'production-30');
+assert.equal(selectWheelOfMeaningReward(0.65).id, 'production-x2');
+assert.equal(selectWheelOfMeaningReward(0.8).id, 'meaning-x2');
+assert.equal(selectWheelOfMeaningReward(0.9).id, 'nothing');
+assert.equal(selectWheelOfMeaningReward(0.97).id, 'jackpot');
+
+const wheelProduction15 = WHEEL_OF_MEANING_REWARDS[0];
+const wheelProduction30 = WHEEL_OF_MEANING_REWARDS[1];
+const wheelTimedReward = WHEEL_OF_MEANING_REWARDS[2];
+const wheelMeaningReward = WHEEL_OF_MEANING_REWARDS[3];
+const wheelNothingReward = WHEEL_OF_MEANING_REWARDS[4];
+const wheelJackpotReward = WHEEL_OF_MEANING_REWARDS[5];
+nearlyEqual(getWheelInstantMeaningGain(wheelProduction15, 100, 3), 45);
+nearlyEqual(getWheelInstantMeaningGain(wheelProduction30, 100, 3), 90);
+nearlyEqual(getWheelInstantMeaningGain(wheelMeaningReward, 100, 3), 200);
+nearlyEqual(getWheelInstantMeaningGain(wheelNothingReward, 100, 3), 0);
+nearlyEqual(getWheelInstantMeaningGain(wheelTimedReward, 100, 3), 0);
+nearlyEqual(getWheelInstantMeaningGain(wheelJackpotReward, 100, 3), 900);
+assert.equal(eq(getWheelInstantMeaningGain(wheelJackpotReward, 0, '1e1000'), '3e1002'), true);
+
+assert.equal(WHEEL_TIMED_MULTIPLIER_DURATION_SECONDS, 10);
+const wheelActiveStart = Date.now();
+const wheelTimedActiveEvent = createWheelTimedActiveEvent(wheelVisibleEvent, wheelTimedReward);
+assert.notEqual(wheelTimedActiveEvent, null);
+assert.equal(wheelTimedActiveEvent?.productionMultiplier, 2);
+assert.ok((wheelTimedActiveEvent?.endsAt ?? 0) >= wheelActiveStart + 10000);
+assert.ok((wheelTimedActiveEvent?.endsAt ?? 0) <= Date.now() + 10000);
+assert.equal(getDreamProductionMultiplier(wheelTimedActiveEvent), 2);
+nearlyEqual(mul(getTapGain(world, 0), getDreamProductionMultiplier(wheelTimedActiveEvent)), 0.02);
+nearlyEqual(mul(getPassiveGain(water, 0, 0, 0), getDreamProductionMultiplier(wheelTimedActiveEvent)), 0.0075);
+
+const wheelStats = recordEventClaim(createDefaultGlobalStats(), 'dream-wheel-of-meaning', 45);
+assert.equal(wheelStats.eventsClaimed, 1);
+assert.equal(wheelStats.eventClaims['dream-wheel-of-meaning'], 1);
+nearlyEqual(wheelStats.meaningEarnedFromEvents, 45);
 
 const worldUnderstandBoard = {
   unlockedSlots: [0, 1],
@@ -410,6 +614,62 @@ const parsedRootUnderstand = parseWorkbenchSentence(rootUnderstandBoard, 'root')
 assert.equal(parsedRootUnderstand.activeNounId, 'root');
 assert.equal(parsedRootUnderstand.effectiveVerbId, null);
 assert.equal(getActiveWordTapMultiplier(root, 25, null), 5);
+
+const heavyRootBoard = {
+  unlockedSlots: [0, 1, 2],
+  placements: {
+    heavy: 0,
+    root: 1,
+  },
+} as WorkbenchBoard;
+const parsedHeavyRoot = parseWorkbenchSentence(heavyRootBoard, 'root');
+assert.equal(parsedHeavyRoot.activeNounId, 'root');
+assert.equal(parsedHeavyRoot.effectiveAdjectiveId, 'heavy');
+assert.equal(parsedHeavyRoot.feedback, 'Heavy modifies Root.');
+nearlyEqual(getTapGain(root, 0, null, heavy), 0.15);
+nearlyEqual(getTapGain(root, 10, null, heavy), 0.175);
+
+const rootHeavyBoard = {
+  unlockedSlots: [0, 1, 2],
+  placements: {
+    root: 0,
+    heavy: 1,
+  },
+} as WorkbenchBoard;
+const parsedRootHeavy = parseWorkbenchSentence(rootHeavyBoard, 'root');
+assert.equal(parsedRootHeavy.activeNounId, 'root');
+assert.equal(parsedRootHeavy.effectiveAdjectiveId, null);
+nearlyEqual(getTapGain(root, 0, null, null), 0.1);
+
+const stillRiverBoard = {
+  unlockedSlots: [0, 1, 2],
+  placements: {
+    still: 0,
+    river: 1,
+  },
+} as WorkbenchBoard;
+const parsedStillRiver = parseWorkbenchSentence(stillRiverBoard, 'river');
+assert.equal(parsedStillRiver.activeNounId, 'river');
+assert.equal(parsedStillRiver.effectiveAdjectiveId, 'still');
+assert.equal(parsedStillRiver.feedback, 'Still modifies River.');
+nearlyEqual(getPassiveGain(river, 0, 0, 0, null, still), 0.0375);
+
+const understandHeavyRootBoard = {
+  unlockedSlots: [0, 1, 2],
+  placements: {
+    understand: 0,
+    heavy: 1,
+    root: 2,
+  },
+} as WorkbenchBoard;
+const parsedUnderstandHeavyRoot = parseWorkbenchSentence(understandHeavyRootBoard, 'root');
+assert.equal(parsedUnderstandHeavyRoot.activeNounId, 'root');
+assert.equal(parsedUnderstandHeavyRoot.effectiveVerbId, 'understand');
+assert.equal(parsedUnderstandHeavyRoot.effectiveAdjectiveId, 'heavy');
+assert.equal(parsedUnderstandHeavyRoot.feedback, 'Heavy modifies Root.');
+nearlyEqual(getTapGain(root, 0, understand, heavy), 0.3);
+nearlyEqual(getTapGain(river, 0, null, heavy), 0.005);
+nearlyEqual(getPassiveGain(root, 0, 0, 0, null, still), 0);
 
 const understandStreamBoard = {
   unlockedSlots: [0, 1],

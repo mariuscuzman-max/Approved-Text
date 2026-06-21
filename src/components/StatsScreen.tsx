@@ -108,6 +108,8 @@ function StatsScreen({
         <StatRow label="Events claimed" value={gameState.stats.eventsClaimed.toLocaleString()} secondary={`Session ${sessionStats.eventsClaimed.toLocaleString()}`} />
         <StatRow label="Meaning Blooms" value={gameState.stats.eventClaims['dream-bloom'].toLocaleString()} secondary={`Session ${sessionStats.eventClaims['dream-bloom'].toLocaleString()}`} />
         <StatRow label="Softened Rules" value={gameState.stats.eventClaims['dream-softened-rules'].toLocaleString()} secondary={`Session ${sessionStats.eventClaims['dream-softened-rules'].toLocaleString()}`} />
+        <StatRow label="Facedown Truth" value={gameState.stats.eventClaims['dream-facedown-truth'].toLocaleString()} secondary={`Session ${sessionStats.eventClaims['dream-facedown-truth'].toLocaleString()}`} />
+        <StatRow label="Wheel of Meaning" value={gameState.stats.eventClaims['dream-wheel-of-meaning'].toLocaleString()} secondary={`Session ${sessionStats.eventClaims['dream-wheel-of-meaning'].toLocaleString()}`} />
         <StatRow label="Farm events" value={gameState.stats.eventClaims.farm.toLocaleString()} secondary={`Session ${sessionStats.eventClaims.farm.toLocaleString()}`} />
         <StatRow label="Water events" value={gameState.stats.eventClaims.water.toLocaleString()} secondary={`Session ${sessionStats.eventClaims.water.toLocaleString()}`} />
       </StatSection>
@@ -118,6 +120,8 @@ function StatsScreen({
         <StatRow label="Board slots unlocked" value={`${gameState.workbenchBoard.unlockedSlots.length} / 9`} />
         <StatRow label="Stamp Upgrade" value={`Level ${gameState.stampUpgradeLevel}`} />
         <StatRow label="Filing Upgrade" value={`Level ${gameState.filingUpgradeLevel}`} />
+        <StatRow label="Stamp Force" value={`Level ${gameState.stampForceLevel}`} />
+        <StatRow label="Filing Depth" value={`Level ${gameState.filingDepthLevel}`} />
       </StatSection>
 
       <StatSection title="Time">

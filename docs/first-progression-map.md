@@ -28,7 +28,11 @@ Use this as the first milestone ladder:
 * 25 Meaning: unlock another word or first small path effect.
 * 50 Meaning: unlock stronger path identity or second path word.
 * 100 Meaning: unlock second sentence slot and let Understand World reveal Dream/Chance.
-* 500 Meaning: first real acceleration milestone.
+* 250 Meaning: unlock And as planned grammar metadata.
+* 500 Meaning: unlock the third board slot.
+* 1,000 Meaning: unlock Heavy and Still adjectives.
+* 2,000 Meaning: Oak/Lake flat-stat word tier.
+* 10,000 Meaning: next progression wall.
 
 This scale is not final. It exists so we can test pacing.
 
@@ -161,7 +165,9 @@ A simple first run should look like this:
 6. At 10, 25, and 50 Meaning, the player gains more path words/effects.
 7. Around 100 Meaning, the player unlocks the second sentence slot.
 8. Around 100 Meaning, Understand World can reveal Dream and Slumber.
-9. Around 500 Meaning, the first stronger acceleration layer should begin.
+9. At 250 Meaning, And enters the Dictionary as a planned grammar word.
+10. At 500 Meaning, the third board slot unlocks.
+11. At 1,000 Meaning, Heavy and Still unlock as the first adjective modifiers.
 
 ## Important Unknowns To Test Later
 
