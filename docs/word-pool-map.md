@@ -17,7 +17,7 @@ This is a planning reference for the first shared, Farm, Flow, and Dream word po
 | ---: | --- | --- | --- | ---: | ---: | --- | --- |
 | 0 | World | noun | Starter / Universal | 0.01 | 0 | The first word. A small beginning for all Meaning. | Implemented |
 | 100 | Understand | verb | Universal | 0 | 0 | Doubles the next noun's base values and supported special-effect magnitude | Implemented |
-| 250 | And | connector | Grammar / Universal | 0 | 0 | Planned connector for future sentence grammar | Planned, unlockable |
+| 250 | And | connector | Grammar / Universal | 0.3 | 0.3 | Connects another noun and grants +10% total tap/passive gain while active | Basic noun connector implemented |
 
 ## Farm / Ground Path
 
@@ -29,7 +29,7 @@ Role: active/manual progression, tapping power, stamping events, and strong acti
 | 10 | Seed | noun | Farm / Ground Path | 0.03 | 0 | Stamp Upgrade bonus +10% | Implemented |
 | 25 | Soil | noun | Farm / Ground Path | 0.05 | 0 | Stamp Upgrade cost -5% | Implemented |
 | 50 | Root | noun | Farm / Ground Path | 0.08 | 0 | Every 25th stamp gives x5 tap gain | Implemented |
-| 100 | Grow | verb | Farm / Ground Path | 0.12 | 0 | Adds 0.5% of current Meaning to tap gain | Planned |
+| 100 | Grow | verb | Farm / Ground Path | 0.12 | 0 | Adds 0.5% of current Meaning to its target clause tap gain | Implemented |
 | 500 | Harvest | verb | Farm / Ground Path | 0.22 | 0 | Once per run, harvest a paired word and retain its base production until reset | Planned |
 | 1,000 | Orchard | noun | Farm / Ground Path | 0.40 | 0 | +10% total tap gain | Planned |
 | 1,000 | Heavy | adjective | Farm / Ground Path | 0 | 0 | Next Farm noun gains +50% base tap value | Implemented |
@@ -48,7 +48,7 @@ Role: passive/idle progression, Meaning/sec, waiting and returning, and efficien
 | 10 | Rain | noun | Water / Flow Path | 0.005 | 0.006 | Filing Upgrade bonus +10% | Implemented |
 | 25 | Stream | noun | Water / Flow Path | 0.005 | 0.008 | Every 8 seconds, gain 3 seconds worth of passive Meaning | Implemented |
 | 50 | River | noun | Water / Flow Path | 0.005 | 0.02 | Passive gain grows +1% per minute while active, capped at +200% | Implemented |
-| 100 | Flow | verb | Water / Flow Path | 0.005 | 0.05 | Every 5 active idle minutes, trigger 30 seconds of +50% gains | Planned |
+| 100 | Flow | verb | Water / Flow Path | 0.005 | 0.05 | Every 5 active minutes, trigger 30 seconds of +50% total gains | Implemented |
 | 500 | Ice | noun | Water / Flow Path | 0.005 | 0.12 | Stores active idle gain; a tap releases twice the stored amount | Planned |
 | 1,000 | Pour | verb | Water / Flow Path | 0 | 0 | Converts a percentage of idle gain into tap power | Planned |
 | 500 | Reservoir | noun | Water / Flow Path | 0.005 | 0.12 | Stores bonus Meaning while idle later | Planned |

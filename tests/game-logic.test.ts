@@ -25,9 +25,18 @@ import {
   FIRST_VERB_WORKBENCH_SLOT,
   STARTING_WORKBENCH_SLOT,
   THIRD_WORKBENCH_SLOT,
+  WORKBENCH_GRID_COLUMNS,
+  WORKBENCH_GRID_ROWS,
+  WORKBENCH_SLOT_COUNT,
   createDefaultWorkbenchBoard,
+  getNearestWorkbenchSlot,
+  getAndTokenId,
+  isWorkbenchGridSlot,
+  isWorkbenchTokenId,
   moveWorkbenchWordToSlot,
   parseWorkbenchSentence,
+  placeAdditionalNoun,
+  placeOwnedAndConnector,
   unlockWorkbenchSlotsForProgress,
 } from '../src/utils/workbench.ts';
 import {
@@ -80,6 +89,30 @@ import { shouldStampFromPointerInteraction } from '../src/utils/stampInput.ts';
 import type { GameState, WorkbenchBoard } from '../src/types/game.ts';
 import { gameQuotes, selectQuoteIndex } from '../src/data/quotes.ts';
 import { FIRST_CHOICE_COST, isFirstPathChoiceUnlocked } from '../src/utils/progression.ts';
+import { AND_BASE_COST, AND_COST_SCALE, getAndPurchaseCost } from '../src/utils/connectors.ts';
+import {
+  getActiveAndProductionMultiplier,
+  getActiveStreamClause,
+  FLOW_SURGE_DURATION_SECONDS,
+  FLOW_SURGE_PRODUCTION_MULTIPLIER,
+  FLOW_TRIGGER_INTERVAL_SECONDS,
+  getFlowSurgeMultiplier,
+  getGrowClauseTapBonus,
+  GROW_CURRENT_MEANING_PERCENT,
+  hasActiveSentenceVerb,
+  getSentenceClauseProduction,
+  getSentenceEventSpawnMultiplier,
+  getSentenceFilingUpgradeBonus,
+  getSentenceFilingUpgradeCost,
+  getSentencePassiveGain,
+  getSentenceStampUpgradeBonus,
+  getSentenceStampUpgradeCost,
+  getSentenceTapGain,
+} from '../src/utils/sentenceProduction.ts';
+import {
+  getModifierConnectionColor,
+  getWordConnectionDisplay,
+} from '../src/utils/sentenceConnections.ts';
 import {
   createDefaultGlobalStats,
   createDefaultSessionStats,
@@ -118,6 +151,8 @@ const world = getWordById('world');
 const slumber = getWordById('slumber');
 const heavy = getWordById('heavy');
 const still = getWordById('still');
+const grow = getWordById('grow');
+const flow = getWordById('flow');
 
 assert.equal(FIRST_CHOICE_COST, 1);
 assert.equal(isFirstPathChoiceUnlocked(0.99), false);
@@ -127,6 +162,12 @@ assert.equal(getWordById('farm').unlockMeaning, 1);
 assert.equal(getWordById('farm').unlockCost, 1);
 assert.equal(getWordById('water').unlockMeaning, 1);
 assert.equal(getWordById('water').unlockCost, 1);
+assert.equal(grow.implemented, true);
+assert.equal(grow.specialEffectType, 'current_meaning_tap_bonus');
+nearlyEqual(grow.specialEffectValue ?? 0, 0.005);
+assert.equal(flow.implemented, true);
+assert.equal(flow.specialEffectType, 'timed_idle_surge');
+nearlyEqual(flow.specialEffectValue ?? 0, 1.5);
 
 assert.ok(gameQuotes.length > 0);
 for (const quote of gameQuotes) {
@@ -156,10 +197,8 @@ for (const word of words) {
 }
 
 const requiredPlannedWordIds = [
-  'grow',
   'harvest',
   'season',
-  'flow',
   'ice',
   'pour',
   'echo',
@@ -203,6 +242,7 @@ assert.equal(defaultState.stampForceLevel, 0);
 assert.equal(defaultState.filingDepthLevel, 0);
 assert.equal(defaultState.activeAdjectiveId, null);
 assert.equal(defaultState.thousandMeaningMilestoneGranted, false);
+assert.equal(defaultState.andOwnedCount, 0);
 
 const defaultSessionStats = createDefaultSessionStats(1000);
 assert.equal(defaultSessionStats.startedAt, 1000);
@@ -239,7 +279,16 @@ assert.deepEqual(getHundredMeaningUnlockWordIds('water'), ['flow', 'understand']
 const andWord = getWordById('and');
 assert.equal(andWord.type, 'connector');
 assert.equal(andWord.unlockMeaning, 250);
-assert.equal(andWord.implemented, false);
+assert.equal(andWord.implemented, true);
+nearlyEqual(andWord.tapValue, 0.3);
+nearlyEqual(andWord.passiveValue, 0.3);
+assert.equal(andWord.specialEffectType, 'connector_production_multiplier');
+nearlyEqual(andWord.specialEffectValue ?? 0, 1.1);
+assert.equal(AND_BASE_COST, 250);
+assert.equal(AND_COST_SCALE, 100);
+nearlyEqual(getAndPurchaseCost(0), 250);
+nearlyEqual(getAndPurchaseCost(1), 25000);
+nearlyEqual(getAndPurchaseCost(2), 2500000);
 assert.deepEqual(getTwoHundredFiftyMeaningUnlockWordIds(), ['and']);
 assert.deepEqual(getThousandMeaningUnlockWordIds(), ['heavy', 'still']);
 assert.equal(heavy.type, 'adjective');
@@ -413,10 +462,201 @@ assert.equal(canTriggerDreamUnlock(100, world, understand, true), false);
 
 const unlockedTwoSlotBoard = unlockWorkbenchSlotsForProgress(createDefaultWorkbenchBoard(), 100);
 assert.deepEqual(unlockedTwoSlotBoard.unlockedSlots, [0, 1]);
+assert.equal(WORKBENCH_GRID_COLUMNS, 3);
+assert.equal(WORKBENCH_GRID_ROWS, 2);
+assert.equal(WORKBENCH_SLOT_COUNT, 6);
+assert.equal(isWorkbenchGridSlot(5), true);
+assert.equal(isWorkbenchGridSlot(6), false);
+assert.equal(getNearestWorkbenchSlot(99, 99), 5);
+assert.equal(getAndTokenId(1), 'and:1');
+assert.equal(getAndTokenId(2), 'and:2');
+assert.equal(isWorkbenchTokenId('and:1'), true);
+assert.equal(isWorkbenchTokenId('and:0'), false);
+assert.equal(isWorkbenchTokenId('not-a-word'), false);
 assert.equal(unlockWorkbenchSlotsForProgress(createDefaultWorkbenchBoard(), 99).unlockedSlots.includes(1), false);
 assert.deepEqual(unlockWorkbenchSlotsForProgress(createDefaultWorkbenchBoard(), 499).unlockedSlots, [0, 1]);
 assert.deepEqual(unlockWorkbenchSlotsForProgress(createDefaultWorkbenchBoard(), 500).unlockedSlots, [0, 1, 2]);
 assert.equal(THIRD_WORKBENCH_SLOT, 2);
+
+const connectorReadyBoard = unlockWorkbenchSlotsForProgress(createDefaultWorkbenchBoard(), 500);
+assert.equal(placeAdditionalNoun(connectorReadyBoard, 'rain').placed, false);
+const firstAndPlacement = placeOwnedAndConnector(connectorReadyBoard, 1);
+assert.equal(firstAndPlacement.placed, true);
+assert.equal(firstAndPlacement.board.placements['and:1'], 1);
+const connectedRainPlacement = placeAdditionalNoun(firstAndPlacement.board, 'rain');
+assert.equal(connectedRainPlacement.placed, true);
+assert.equal(connectedRainPlacement.board.placements.rain, 2);
+const parsedWorldAndRain = parseWorkbenchSentence(connectedRainPlacement.board, 'world');
+assert.deepEqual(parsedWorldAndRain.orderedWordIds, ['world', 'and', 'rain']);
+assert.deepEqual(parsedWorldAndRain.nounClauses, [
+  { nounId: 'world', effectiveVerbId: null, effectiveAdjectiveId: null },
+  { nounId: 'rain', effectiveVerbId: null, effectiveAdjectiveId: null },
+]);
+assert.equal(parsedWorldAndRain.activeConnectorCount, 1);
+assert.deepEqual(parsedWorldAndRain.activeTokenIds, ['world', 'and:1', 'rain']);
+assert.deepEqual(parsedWorldAndRain.looseTokenIds, []);
+nearlyEqual(getActiveAndProductionMultiplier(1), 1.1);
+nearlyEqual(getSentenceTapGain(parsedWorldAndRain, 0), (0.01 + 0.005 + 0.3) * 1.1);
+nearlyEqual(getSentencePassiveGain(parsedWorldAndRain, 0, 0, 0), (0 + (0.006 * 1.25) + 0.3) * 1.1);
+nearlyEqual(getSentenceFilingUpgradeBonus(parsedWorldAndRain, 10), 0.042);
+nearlyEqual(getSentenceFilingUpgradeCost(parsedWorldAndRain, 0), 1);
+
+const worldAndSoilBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1, 2],
+  placements: { world: 0, 'and:1': 1, soil: 2 },
+};
+const parsedWorldAndSoil = parseWorkbenchSentence(worldAndSoilBoard, 'world');
+nearlyEqual(getSentenceStampUpgradeCost(parsedWorldAndSoil, 0), 0.95);
+nearlyEqual(getSentenceStampUpgradeCost(parsedWorldAndSoil, 0, 0.75), 0.7125);
+
+const worldAndSeedBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1, 2],
+  placements: { world: 0, 'and:1': 1, seed: 2 },
+};
+const parsedWorldAndSeed = parseWorkbenchSentence(worldAndSeedBoard, 'world');
+nearlyEqual(getSentenceStampUpgradeBonus(parsedWorldAndSeed, 10), 0.042);
+
+const worldAndSlumberBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1, 2],
+  placements: { world: 0, 'and:1': 1, slumber: 2 },
+};
+nearlyEqual(getSentenceEventSpawnMultiplier(parseWorkbenchSentence(worldAndSlumberBoard, 'world')), 1.3);
+
+const looseSlumberBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1],
+  placements: { world: 0, slumber: 1 },
+};
+nearlyEqual(getSentenceEventSpawnMultiplier(parseWorkbenchSentence(looseSlumberBoard, 'world')), 1);
+
+const worldAndUnderstandSlumberBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1, 2, 3],
+  placements: { world: 0, 'and:1': 1, understand: 2, slumber: 3 },
+};
+nearlyEqual(
+  getSentenceEventSpawnMultiplier(parseWorkbenchSentence(worldAndUnderstandSlumberBoard, 'world')),
+  1.6,
+);
+
+const worldAndUnderstandStreamBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1, 2, 3],
+  placements: { world: 0, 'and:1': 1, understand: 2, stream: 3 },
+};
+const secondaryStreamClause = getActiveStreamClause(parseWorkbenchSentence(worldAndUnderstandStreamBoard, 'world'));
+assert.equal(secondaryStreamClause?.noun.id, 'stream');
+assert.equal(secondaryStreamClause?.verb?.id, 'understand');
+const secondaryStreamProduction = getSentenceClauseProduction(
+  parseWorkbenchSentence(worldAndUnderstandStreamBoard, 'world'),
+  0,
+  0,
+  0,
+  0,
+  1,
+);
+nearlyEqual(secondaryStreamProduction[1].tapGain, 0.01);
+nearlyEqual(secondaryStreamProduction[1].passiveGain, 0.02);
+
+const parsedTrailingAnd = parseWorkbenchSentence(firstAndPlacement.board, 'world');
+assert.equal(parsedTrailingAnd.activeConnectorCount, 0);
+assert.deepEqual(parsedTrailingAnd.activeTokenIds, ['world']);
+assert.deepEqual(parsedTrailingAnd.looseTokenIds, ['and:1']);
+nearlyEqual(getSentenceTapGain(parsedTrailingAnd, 0), 0.01);
+
+const understandWorldAndRainBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1, 2, 3],
+  placements: {
+    understand: 0,
+    world: 1,
+    'and:1': 2,
+    rain: 3,
+  },
+};
+const parsedUnderstandWorldAndRain = parseWorkbenchSentence(understandWorldAndRainBoard, 'world');
+assert.deepEqual(parsedUnderstandWorldAndRain.nounClauses, [
+  { nounId: 'world', effectiveVerbId: 'understand', effectiveAdjectiveId: null },
+  { nounId: 'rain', effectiveVerbId: null, effectiveAdjectiveId: null },
+]);
+assert.deepEqual(parsedUnderstandWorldAndRain.modifierLinks, [
+  { modifierWordId: 'understand', targetNounId: 'world', kind: 'verb' },
+]);
+assert.deepEqual(getWordConnectionDisplay(parsedUnderstandWorldAndRain.modifierLinks, 'understand'), {
+  color: '#9a6a36',
+  label: '→ World',
+});
+assert.deepEqual(getWordConnectionDisplay(parsedUnderstandWorldAndRain.modifierLinks, 'world'), {
+  color: '#9a6a36',
+  label: '← Understand',
+});
+assert.equal(getWordConnectionDisplay(parsedUnderstandWorldAndRain.modifierLinks, 'rain'), null);
+nearlyEqual(getSentenceTapGain(parsedUnderstandWorldAndRain, 0), (0.02 + 0.005 + 0.3) * 1.1);
+const understandWorldAndRainProduction = getSentenceClauseProduction(
+  parsedUnderstandWorldAndRain,
+  0,
+  0,
+  0,
+  0,
+  1,
+);
+nearlyEqual(understandWorldAndRainProduction[0].tapGain, 0.02);
+nearlyEqual(understandWorldAndRainProduction[1].tapGain, 0.005);
+nearlyEqual(understandWorldAndRainProduction[1].passiveGain, 0.006 * 1.25);
+
+const growWorldBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1],
+  placements: { grow: 0, world: 1 },
+};
+const parsedGrowWorld = parseWorkbenchSentence(growWorldBoard, 'world');
+assert.equal(hasActiveSentenceVerb(parsedGrowWorld, 'grow'), true);
+nearlyEqual(GROW_CURRENT_MEANING_PERCENT, 0.005);
+nearlyEqual(getGrowClauseTapBonus(grow, 100), 0.5);
+assert.equal(eq(getGrowClauseTapBonus(grow, '1e1000'), '5e997'), true);
+nearlyEqual(getSentenceTapGain(parsedGrowWorld, 0, 1, 100), 0.51);
+
+const worldGrowBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1],
+  placements: { world: 0, grow: 1 },
+};
+const parsedWorldGrow = parseWorkbenchSentence(worldGrowBoard, 'world');
+assert.equal(hasActiveSentenceVerb(parsedWorldGrow, 'grow'), false);
+nearlyEqual(getSentenceTapGain(parsedWorldGrow, 0, 1, 100), 0.01);
+
+const flowWaterBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1],
+  placements: { flow: 0, water: 1 },
+};
+const parsedFlowWater = parseWorkbenchSentence(flowWaterBoard, 'water');
+assert.equal(hasActiveSentenceVerb(parsedFlowWater, 'flow'), true);
+assert.equal(FLOW_TRIGGER_INTERVAL_SECONDS, 300);
+assert.equal(FLOW_SURGE_DURATION_SECONDS, 30);
+nearlyEqual(FLOW_SURGE_PRODUCTION_MULTIPLIER, 1.5);
+nearlyEqual(getFlowSurgeMultiplier(parsedFlowWater, null, 0), 1);
+nearlyEqual(getFlowSurgeMultiplier(parsedFlowWater, 30_000, 0), 1.5);
+nearlyEqual(getFlowSurgeMultiplier(parsedFlowWater, 30_000, 30_000), 1);
+
+const waterFlowBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1],
+  placements: { water: 0, flow: 1 },
+};
+nearlyEqual(getFlowSurgeMultiplier(parseWorkbenchSentence(waterFlowBoard, 'water'), 30_000, 0), 1);
+
+const understandAndRainBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1, 2],
+  placements: { understand: 0, 'and:1': 1, rain: 2 },
+};
+const parsedUnderstandAndRain = parseWorkbenchSentence(understandAndRainBoard, 'rain');
+assert.deepEqual(parsedUnderstandAndRain.modifierLinks, []);
+assert.deepEqual(parsedUnderstandAndRain.activeTokenIds, ['rain']);
+assert.deepEqual(parsedUnderstandAndRain.looseTokenIds, ['understand', 'and:1']);
+assert.equal(getModifierConnectionColor('understand'), '#9a6a36');
+assert.equal(getModifierConnectionColor('grow'), '#4f7a42');
+assert.equal(getModifierConnectionColor('flow'), '#277c91');
+
+const repeatedConnectorBoard: WorkbenchBoard = {
+  unlockedSlots: [0, 1, 2, 3, 4],
+  placements: connectedRainPlacement.board.placements,
+};
+const secondAndPlacement = placeOwnedAndConnector(repeatedConnectorBoard, 2);
+assert.equal(secondAndPlacement.placed, true);
+assert.equal(secondAndPlacement.board.placements['and:2'], 3);
 
 const lockedMove = moveWorkbenchWordToSlot(createDefaultWorkbenchBoard(), 'world', 1);
 assert.equal(lockedMove.moved, false);
@@ -430,9 +670,12 @@ const extendedWordIdSave = serializeGameState({
   unlockedWordIds: ['world', 'and', 'oak', 'lake'],
   twoHundredFiftyMeaningMilestoneGranted: true,
 });
-assert.notEqual(parseSavedGameState(extendedWordIdSave), null);
-const loadedExtendedWordIdSave = mergeSavedState(extendedWordIdSave);
+const legacyExtendedWordIdSave: Partial<typeof extendedWordIdSave> = { ...extendedWordIdSave };
+delete legacyExtendedWordIdSave.andOwnedCount;
+assert.notEqual(parseSavedGameState(legacyExtendedWordIdSave), null);
+const loadedExtendedWordIdSave = mergeSavedState(parseSavedGameState(legacyExtendedWordIdSave));
 assert.ok(loadedExtendedWordIdSave.unlockedWordIds.includes('and'));
+assert.equal(loadedExtendedWordIdSave.andOwnedCount, 1);
 assert.ok(loadedExtendedWordIdSave.unlockedWordIds.includes('oak'));
 assert.ok(loadedExtendedWordIdSave.unlockedWordIds.includes('lake'));
 assert.equal(loadedExtendedWordIdSave.twoHundredFiftyMeaningMilestoneGranted, true);
@@ -639,6 +882,8 @@ const rootHeavyBoard = {
 const parsedRootHeavy = parseWorkbenchSentence(rootHeavyBoard, 'root');
 assert.equal(parsedRootHeavy.activeNounId, 'root');
 assert.equal(parsedRootHeavy.effectiveAdjectiveId, null);
+assert.deepEqual(parsedRootHeavy.activeTokenIds, ['root']);
+assert.deepEqual(parsedRootHeavy.looseTokenIds, ['heavy']);
 nearlyEqual(getTapGain(root, 0, null, null), 0.1);
 
 const stillRiverBoard = {
@@ -666,6 +911,13 @@ const parsedUnderstandHeavyRoot = parseWorkbenchSentence(understandHeavyRootBoar
 assert.equal(parsedUnderstandHeavyRoot.activeNounId, 'root');
 assert.equal(parsedUnderstandHeavyRoot.effectiveVerbId, 'understand');
 assert.equal(parsedUnderstandHeavyRoot.effectiveAdjectiveId, 'heavy');
+assert.deepEqual(parsedUnderstandHeavyRoot.modifierLinks, [
+  { modifierWordId: 'understand', targetNounId: 'root', kind: 'verb' },
+  { modifierWordId: 'heavy', targetNounId: 'root', kind: 'adjective' },
+]);
+assert.deepEqual(parsedUnderstandHeavyRoot.activeTokenIds, ['understand', 'heavy', 'root']);
+assert.deepEqual(parsedUnderstandHeavyRoot.looseTokenIds, []);
+assert.equal(getWordConnectionDisplay(parsedUnderstandHeavyRoot.modifierLinks, 'root')?.label, '← Understand');
 assert.equal(parsedUnderstandHeavyRoot.feedback, 'Heavy modifies Root.');
 nearlyEqual(getTapGain(root, 0, understand, heavy), 0.3);
 nearlyEqual(getTapGain(river, 0, null, heavy), 0.005);

@@ -10,6 +10,7 @@ import type {
   WheelRevealState,
   WordId,
   WorkbenchGridSlot,
+  WorkbenchTokenId,
 } from './types/game';
 import { loadGameState, resetGameState, saveGameState } from './utils/storage';
 import { formatMeaning, formatRate } from './utils/format';
@@ -27,17 +28,12 @@ import {
   getDreamMilestoneUnlockWordIds,
   getHundredMeaningUnlockWordIds,
   getThousandMeaningUnlockWordIds,
-  getTwoHundredFiftyMeaningUnlockWordIds,
 } from './utils/milestones';
 import { canTriggerDreamUnlock, unlockDreamLayer } from './utils/dream';
 import {
   applyFilingDepth,
   applyStampForce,
-  getActiveWordTapMultiplier,
   getPassiveGain,
-  getTapGain,
-  getEffectiveFilingUpgradeCost,
-  getEffectiveStampUpgradeCost,
   getUpgradeMilestoneMultiplier,
   getPercentageUpgradeCost,
   isPercentageUpgradeUnlocked,
@@ -48,7 +44,6 @@ import {
   createWheelTimedActiveEvent,
   createVisiblePathEvent,
   getActivePathEventSecondsRemaining,
-  getEventSpawnMultiplier,
   getFarmEventTapMultiplier,
   getDreamProductionMultiplier,
   getFlowEventIdleMultiplier,
@@ -64,6 +59,8 @@ import {
   FIRST_ADJECTIVE_WORKBENCH_SLOT,
   STARTING_WORKBENCH_SLOT,
   getNearestWorkbenchSlot,
+  placeAdditionalNoun,
+  placeOwnedAndConnector,
   moveWorkbenchWordToSlot,
   parseWorkbenchSentence,
   placeWorkbenchWord,
@@ -83,6 +80,20 @@ import {
   isStreamDrizzleActive,
   STREAM_DRIZZLE_INTERVAL_SECONDS,
 } from './utils/stream.ts';
+import { getAndPurchaseCost } from './utils/connectors.ts';
+import {
+  getSentencePassiveGain,
+  getSentenceFilingUpgradeCost,
+  getActiveStreamClause,
+  getSentenceEventSpawnMultiplier,
+  getSentenceClauseProduction,
+  FLOW_SURGE_DURATION_SECONDS,
+  FLOW_TRIGGER_INTERVAL_SECONDS,
+  getFlowSurgeMultiplier,
+  getSentenceStampUpgradeCost,
+  getSentenceTapGain,
+  hasSentenceTapProc,
+} from './utils/sentenceProduction.ts';
 
 const TEN_MEANING_MILESTONE = 10;
 const TWENTY_FIVE_MEANING_MILESTONE = 25;
@@ -103,6 +114,7 @@ function App() {
   const [visiblePathEvent, setVisiblePathEvent] = useState<VisiblePathEvent | null>(null);
   const [activePathEvent, setActivePathEvent] = useState<ActivePathEvent | null>(null);
   const [wheelReveal, setWheelReveal] = useState<WheelRevealState | null>(null);
+  const [flowSurgeEndsAt, setFlowSurgeEndsAt] = useState<number | null>(null);
   const [dreamPromptDismissed, setDreamPromptDismissed] = useState(false);
   const [now, setNow] = useState(Date.now());
   const nextEventTimerRef = useRef<number | null>(null);
@@ -137,6 +149,17 @@ function App() {
     () => (parsedSentence.effectiveAdjectiveId ? getWordById(parsedSentence.effectiveAdjectiveId) : null),
     [parsedSentence.effectiveAdjectiveId],
   );
+  const activeStreamClause = useMemo(
+    () => getActiveStreamClause(parsedSentence),
+    [parsedSentence],
+  );
+  const sentenceEventSpawnMultiplier = useMemo(
+    () => getSentenceEventSpawnMultiplier(parsedSentence),
+    [parsedSentence],
+  );
+  const activeFlowTargetNounId = parsedSentence.modifierLinks.find((link) => (
+    link.kind === 'verb' && link.modifierWordId === 'flow'
+  ))?.targetNounId ?? null;
   const verbSlotUnlocked = gameState.unlockedWordIds.includes('understand');
   const unlockedWords = useMemo(
     () => getUnlockedWords(gameState.unlockedWordIds),
@@ -146,51 +169,89 @@ function App() {
     () => getUnlockChoices(gameState.chosenFirstPath),
     [gameState.chosenFirstPath],
   );
-  const lockedAdjectiveWords = useMemo(
-    () => (['heavy', 'still'] as WordId[])
+  const lockedPreviewWords = useMemo(
+    () => (['and', 'heavy', 'still'] as WordId[])
       .filter((wordId) => !gameState.unlockedWordIds.includes(wordId))
       .map(getWordById),
     [gameState.unlockedWordIds],
   );
+  const andPurchaseCost = getAndPurchaseCost(gameState.andOwnedCount);
   const activeEventSecondsRemaining = getActivePathEventSecondsRemaining(activePathEvent, now);
   const farmEventTapMultiplier = getFarmEventTapMultiplier(activePathEvent);
   const flowEventIdleMultiplier = getFlowEventIdleMultiplier(activePathEvent, gameState.filingUpgradeLevel);
   const softenedRulesCostMultiplier = getSoftenedRulesUpgradeCostMultiplier(activePathEvent);
   const dreamProductionMultiplier = getDreamProductionMultiplier(activePathEvent);
-  const currentTapGain = applyStampForce(
-    mul(
+  const flowSurgeMultiplier = getFlowSurgeMultiplier(parsedSentence, flowSurgeEndsAt, now);
+  const currentTapGain = mul(
+    applyStampForce(
       mul(
-        getTapGain(effectiveNoun, gameState.stampUpgradeLevel, effectiveVerb, effectiveAdjective),
-        farmEventTapMultiplier,
-      ),
-      dreamProductionMultiplier,
-    ),
-    gameState.stampForceLevel,
-  );
-  const currentPassiveGain = applyFilingDepth(
-    mul(
-      mul(
-        getPassiveGain(
-          effectiveNoun,
-          gameState.filingUpgradeLevel,
-          gameState.activeWordStartedAt,
-          now,
-          effectiveVerb,
-          effectiveAdjective,
+        mul(
+          getSentenceTapGain(
+            parsedSentence,
+            gameState.stampUpgradeLevel,
+            gameState.manualStampCount + 1,
+            gameState.meaning,
+          ),
+          farmEventTapMultiplier,
         ),
-        flowEventIdleMultiplier,
+        dreamProductionMultiplier,
       ),
-      dreamProductionMultiplier,
+      gameState.stampForceLevel,
     ),
-    gameState.filingDepthLevel,
+    flowSurgeMultiplier,
+  );
+  const currentPassiveGain = mul(
+    applyFilingDepth(
+      mul(
+        mul(
+          getSentencePassiveGain(
+            parsedSentence,
+            gameState.filingUpgradeLevel,
+            gameState.activeWordStartedAt,
+            now,
+          ),
+          flowEventIdleMultiplier,
+        ),
+        dreamProductionMultiplier,
+      ),
+      gameState.filingDepthLevel,
+    ),
+    flowSurgeMultiplier,
+  );
+  const clauseProduction = useMemo(
+    () => getSentenceClauseProduction(
+      parsedSentence,
+      gameState.stampUpgradeLevel,
+      gameState.filingUpgradeLevel,
+      gameState.activeWordStartedAt,
+      now,
+      gameState.manualStampCount + 1,
+      gameState.meaning,
+    ),
+    [
+      gameState.activeWordStartedAt,
+      gameState.filingUpgradeLevel,
+      gameState.manualStampCount,
+      gameState.meaning,
+      gameState.stampUpgradeLevel,
+      now,
+      parsedSentence,
+    ],
   );
   const currentTapGainRef = useRef(currentTapGain);
   const currentPassiveGainRef = useRef(currentPassiveGain);
-  const activeEventLabel = activePathEvent && activeEventSecondsRemaining > 0
+  const pathEventLabel = activePathEvent && activeEventSecondsRemaining > 0
     ? activePathEvent.productionMultiplier
       ? `${activePathEvent.name}: x${dreamProductionMultiplier} production, ${activeEventSecondsRemaining}s`
       : `${activePathEvent.name}: ${activeEventSecondsRemaining}s`
     : null;
+  const flowSurgeSecondsRemaining = flowSurgeEndsAt
+    ? Math.max(0, Math.ceil((flowSurgeEndsAt - now) / 1000))
+    : 0;
+  const activeEventLabel = [
+    pathEventLabel,
+    flowSurgeSecondsRemaining > 0 ? `Flow surge: x1.5 gains, ${flowSurgeSecondsRemaining}s` : null,
+  ].filter(Boolean).join(' · ') || null;
   const canShowDreamPrompt =
     canTriggerDreamUnlock(gameState.meaning, effectiveNoun, effectiveVerb, gameState.dreamUnlocked) &&
     !dreamPromptDismissed;
@@ -222,6 +283,10 @@ function App() {
       return gameState.dreamUnlocked
         ? `Next milestone: And / Echo at ${formatMeaning(TWO_HUNDRED_FIFTY_MEANING_MILESTONE)} Meaning.`
         : `Next milestone: And at ${formatMeaning(TWO_HUNDRED_FIFTY_MEANING_MILESTONE)} Meaning; Echo requires Dream.`;
+    }
+
+    if (gameState.andOwnedCount === 0) {
+      return `Available now: purchase And for ${formatMeaning(andPurchaseCost)} Meaning.`;
     }
 
     if (gameState.workbenchBoard.unlockedSlots.length < 3) {
@@ -265,6 +330,7 @@ function App() {
     gameState.activeAdjectiveId,
     gameState.activeWordId,
     gameState.unlockedWordIds,
+    gameState.andOwnedCount,
     gameState.chosenFirstPath,
     gameState.passiveMeaningPerSecond,
     gameState.tenMeaningMilestoneGranted,
@@ -313,7 +379,7 @@ function App() {
   const scheduleNextPathEvent = useCallback((
     dreamUnlocked: boolean,
     activeWordForSchedule = effectiveNoun,
-    effectiveVerbForSchedule = effectiveVerb,
+    spawnMultiplierForSchedule = sentenceEventSpawnMultiplier,
   ) => {
     const eventType = getRandomVisibleEventType(activeWordForSchedule, dreamUnlocked);
 
@@ -330,8 +396,8 @@ function App() {
       setGameState((current) => ({ ...current, stats: recordEventSpawn(current.stats) }));
       setSessionStats((current) => recordEventSpawn(current));
       nextEventTimerRef.current = null;
-    }, getNextPathEventDelayMs(getEventSpawnMultiplier(activeWordForSchedule, effectiveVerbForSchedule)));
-  }, [effectiveNoun, effectiveVerb]);
+    }, getNextPathEventDelayMs(spawnMultiplierForSchedule));
+  }, [effectiveNoun, sentenceEventSpawnMultiplier]);
 
   useEffect(() => {
     clearPathEventTimers();
@@ -392,6 +458,21 @@ function App() {
 
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    setFlowSurgeEndsAt(null);
+
+    if (!activeFlowTargetNounId) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setFlowSurgeEndsAt(Date.now() + FLOW_SURGE_DURATION_SECONDS * 1000);
+      setNotice(`Flow surge active: +50% total gains for ${FLOW_SURGE_DURATION_SECONDS}s`);
+    }, FLOW_TRIGGER_INTERVAL_SECONDS * 1000);
+
+    return () => window.clearInterval(timer);
+  }, [activeFlowTargetNounId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -464,13 +545,17 @@ function App() {
   }, [currentPassiveGain, currentTapGain]);
 
   useEffect(() => {
-    if (!isStreamDrizzleActive(effectiveNoun)) {
+    if (!activeStreamClause || !isStreamDrizzleActive(activeStreamClause.noun)) {
       return;
     }
 
     const timer = window.setInterval(() => {
       const passiveRate = currentPassiveGainRef.current;
-      const streamGain = getStreamDrizzleGain(passiveRate, effectiveNoun, effectiveVerb);
+      const streamGain = getStreamDrizzleGain(
+        passiveRate,
+        activeStreamClause.noun,
+        activeStreamClause.verb,
+      );
 
       if (lte(streamGain, 0)) {
         return;
@@ -502,7 +587,7 @@ function App() {
     }, STREAM_DRIZZLE_INTERVAL_SECONDS * 1000);
 
     return () => window.clearInterval(timer);
-  }, [effectiveNoun, effectiveVerb]);
+  }, [activeStreamClause]);
 
   useEffect(() => {
     if (
@@ -670,8 +755,6 @@ function App() {
       return;
     }
 
-    const wordsToUnlock = getTwoHundredFiftyMeaningUnlockWordIds();
-
     setGameState((current) => {
       if (
         !current.hundredMeaningMilestoneGranted ||
@@ -683,14 +766,10 @@ function App() {
 
       return {
         ...current,
-        unlockedWordIds: Array.from(new Set<WordId>([
-          ...current.unlockedWordIds,
-          ...wordsToUnlock,
-        ])),
         twoHundredFiftyMeaningMilestoneGranted: true,
       };
     });
-    setNotice('New grammar word acquired: And');
+    setNotice('Grammar purchase available: And');
   }, [
     gameState.hundredMeaningMilestoneGranted,
     gameState.meaning,
@@ -772,22 +851,23 @@ function App() {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      const passiveGain = applyFilingDepth(
-        mul(
+      const passiveGain = mul(
+        applyFilingDepth(
           mul(
-            getPassiveGain(
-              effectiveNoun,
-              gameState.filingUpgradeLevel,
-              gameState.activeWordStartedAt,
-              Date.now(),
-              effectiveVerb,
-              effectiveAdjective,
+            mul(
+              getSentencePassiveGain(
+                parsedSentence,
+                gameState.filingUpgradeLevel,
+                gameState.activeWordStartedAt,
+                Date.now(),
+              ),
+              getFlowEventIdleMultiplier(activePathEvent, gameState.filingUpgradeLevel),
             ),
-            getFlowEventIdleMultiplier(activePathEvent, gameState.filingUpgradeLevel),
+            getDreamProductionMultiplier(activePathEvent),
           ),
-          getDreamProductionMultiplier(activePathEvent),
+          gameState.filingDepthLevel,
         ),
-        gameState.filingDepthLevel,
+        getFlowSurgeMultiplier(parsedSentence, flowSurgeEndsAt, Date.now()),
       );
 
       if (lte(passiveGain, 0)) {
@@ -807,54 +887,45 @@ function App() {
     return () => window.clearInterval(timer);
   }, [
     activePathEvent,
-    effectiveNoun,
-    effectiveVerb,
-    effectiveAdjective,
+    parsedSentence,
     gameState.activeWordStartedAt,
     gameState.filingDepthLevel,
     gameState.filingUpgradeLevel,
+    flowSurgeEndsAt,
+    parsedSentence,
   ]);
 
   const handleStamp = (x: number, y: number) => {
     const stampId = Date.now() + Math.random();
     const nextManualStampCount = gameState.manualStampCount + 1;
-    const activeWordTapMultiplier = getActiveWordTapMultiplier(effectiveNoun, nextManualStampCount, effectiveVerb);
-    const stampedValue = mul(currentTapGain, activeWordTapMultiplier);
-    const stampedLabel = activeWordTapMultiplier > 1
+    const stampedValue = currentTapGain;
+    const stampedLabel = hasSentenceTapProc(parsedSentence, nextManualStampCount)
       ? `Root bonus: +${formatMeaning(stampedValue)} Meaning`
       : `${effectiveNoun.text} stamped: +${formatMeaning(stampedValue)} Meaning`;
 
     setGameState((current) => {
       const currentParsedSentence = parseWorkbenchSentence(current.workbenchBoard, current.activeNounId);
       const currentActiveWord = getWordById(currentParsedSentence.activeNounId);
-      const currentActiveVerb = currentParsedSentence.effectiveVerbId
-        ? getWordById(currentParsedSentence.effectiveVerbId)
-        : null;
-      const currentActiveAdjective = currentParsedSentence.effectiveAdjectiveId
-        ? getWordById(currentParsedSentence.effectiveAdjectiveId)
-        : null;
       const nextCurrentManualStampCount = current.manualStampCount + 1;
-      const baseTapGain = applyStampForce(
-        mul(
+      const baseTapGain = mul(
+        applyStampForce(
           mul(
-            getTapGain(
-              currentActiveWord,
-              current.stampUpgradeLevel,
-              currentActiveVerb,
-              currentActiveAdjective,
+            mul(
+              getSentenceTapGain(
+                currentParsedSentence,
+                current.stampUpgradeLevel,
+                nextCurrentManualStampCount,
+                current.meaning,
+              ),
+              getFarmEventTapMultiplier(activePathEvent),
             ),
-            getFarmEventTapMultiplier(activePathEvent),
+            getDreamProductionMultiplier(activePathEvent),
           ),
-          getDreamProductionMultiplier(activePathEvent),
+          current.stampForceLevel,
         ),
-        current.stampForceLevel,
+        getFlowSurgeMultiplier(currentParsedSentence, flowSurgeEndsAt, Date.now()),
       );
-      const currentActiveWordTapMultiplier = getActiveWordTapMultiplier(
-        currentActiveWord,
-        nextCurrentManualStampCount,
-        currentActiveVerb,
-      );
-      const tapGain = mul(baseTapGain, currentActiveWordTapMultiplier);
+      const tapGain = baseTapGain;
 
       return {
         ...current,
@@ -912,6 +983,23 @@ function App() {
     }
 
     const word = getWordById(wordId);
+
+    if (word.type === 'connector') {
+      const placement = placeOwnedAndConnector(gameState.workbenchBoard, gameState.andOwnedCount);
+
+      if (!placement.placed) {
+        setNotice('No owned And copy can be placed in an open slot.');
+        return;
+      }
+
+      setGameState((current) => ({
+        ...current,
+        workbenchBoard: placeOwnedAndConnector(current.workbenchBoard, current.andOwnedCount).board,
+      }));
+      setActiveTab('main');
+      setNotice('And placed. Another noun may now be added after it.');
+      return;
+    }
 
     if (word.type === 'verb') {
       setGameState((current) => {
@@ -991,6 +1079,15 @@ function App() {
     }
 
     setGameState((current) => {
+      const additionalNounPlacement = placeAdditionalNoun(current.workbenchBoard, wordId);
+
+      if (additionalNounPlacement.placed) {
+        return {
+          ...current,
+          workbenchBoard: additionalNounPlacement.board,
+        };
+      }
+
       const nextWorkbenchBoard = placeWorkbenchWord(
         current.workbenchBoard,
         wordId,
@@ -1021,11 +1118,41 @@ function App() {
       };
     });
     setActiveTab('main');
-    setNotice(`${word.text} is now the active noun.`);
+    setNotice(
+      placeAdditionalNoun(gameState.workbenchBoard, wordId).placed
+        ? `${word.text} added after And. Its power activates in the next parser step.`
+        : `${word.text} is now the active noun.`,
+    );
   };
 
   const handleUnavailableSentenceControl = () => {
     setNotice('More word slots coming soon.');
+  };
+
+  const handleBuyAnd = () => {
+    const cost = getAndPurchaseCost(gameState.andOwnedCount);
+
+    if (!gameState.twoHundredFiftyMeaningMilestoneGranted || lt(gameState.meaning, cost)) {
+      return;
+    }
+
+    setGameState((current) => {
+      const currentCost = getAndPurchaseCost(current.andOwnedCount);
+
+      if (!current.twoHundredFiftyMeaningMilestoneGranted || lt(current.meaning, currentCost)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        meaning: sub(current.meaning, currentCost),
+        andOwnedCount: current.andOwnedCount + 1,
+        unlockedWordIds: current.unlockedWordIds.includes('and')
+          ? current.unlockedWordIds
+          : [...current.unlockedWordIds, 'and'],
+      };
+    });
+    setNotice(`And purchased. Next copy costs ${formatMeaning(getAndPurchaseCost(gameState.andOwnedCount + 1))} Meaning.`);
   };
 
   const handlePathEventClick = (event: VisiblePathEvent) => {
@@ -1155,10 +1282,9 @@ function App() {
   };
 
   const handleBuyStampUpgrade = () => {
-    const cost = getEffectiveStampUpgradeCost(
+    const cost = getSentenceStampUpgradeCost(
+      parsedSentence,
       gameState.stampUpgradeLevel,
-      effectiveNoun,
-      effectiveVerb,
       softenedRulesCostMultiplier,
     );
 
@@ -1169,12 +1295,10 @@ function App() {
     const nextLevel = gameState.stampUpgradeLevel + 1;
 
     setGameState((current) => {
-      const currentActiveNoun = getWordById(current.activeNounId);
-      const currentActiveVerb = current.activeVerbId ? getWordById(current.activeVerbId) : null;
-      const currentCost = getEffectiveStampUpgradeCost(
+      const currentSentence = parseWorkbenchSentence(current.workbenchBoard, current.activeNounId);
+      const currentCost = getSentenceStampUpgradeCost(
+        currentSentence,
         current.stampUpgradeLevel,
-        currentActiveNoun,
-        currentActiveVerb,
         getSoftenedRulesUpgradeCostMultiplier(activePathEvent),
       );
 
@@ -1200,10 +1324,9 @@ function App() {
   };
 
   const handleBuyFilingUpgrade = () => {
-    const cost = getEffectiveFilingUpgradeCost(
+    const cost = getSentenceFilingUpgradeCost(
+      parsedSentence,
       gameState.filingUpgradeLevel,
-      effectiveNoun,
-      effectiveVerb,
       softenedRulesCostMultiplier,
     );
 
@@ -1214,16 +1337,10 @@ function App() {
     const nextLevel = gameState.filingUpgradeLevel + 1;
 
     setGameState((current) => {
-      const currentActiveNoun = getWordById(current.activeNounId);
-      const currentActiveVerb = current.activeVerbId ? getWordById(current.activeVerbId) : null;
       const currentSentence = parseWorkbenchSentence(current.workbenchBoard, current.activeNounId);
-      const currentActiveAdjective = currentSentence.effectiveAdjectiveId
-        ? getWordById(currentSentence.effectiveAdjectiveId)
-        : null;
-      const currentCost = getEffectiveFilingUpgradeCost(
+      const currentCost = getSentenceFilingUpgradeCost(
+        currentSentence,
         current.filingUpgradeLevel,
-        currentActiveNoun,
-        currentActiveVerb,
         getSoftenedRulesUpgradeCostMultiplier(activePathEvent),
       );
 
@@ -1238,13 +1355,11 @@ function App() {
         meaning: sub(current.meaning, currentCost),
         filingUpgradeLevel: nextFilingUpgradeLevel,
         stats: recordUpgradePurchase(current.stats),
-        passiveMeaningPerSecond: getPassiveGain(
-          currentActiveNoun,
+        passiveMeaningPerSecond: getSentencePassiveGain(
+          currentSentence,
           nextFilingUpgradeLevel,
           current.activeWordStartedAt,
           Date.now(),
-          currentActiveVerb,
-          currentActiveAdjective,
         ),
       };
     });
@@ -1308,11 +1423,11 @@ function App() {
     setNotice('Filing Depth increased by 5%.');
   };
 
-  const handleMoveWorkbenchWord = (wordId: WordId, xPercent: number, yPercent: number) => {
+  const handleMoveWorkbenchWord = (tokenId: WorkbenchTokenId, xPercent: number, yPercent: number) => {
     const targetSlot = getNearestWorkbenchSlot(xPercent, yPercent);
 
     setGameState((current) => {
-      const moveResult = moveWorkbenchWordToSlot(current.workbenchBoard, wordId, targetSlot);
+      const moveResult = moveWorkbenchWordToSlot(current.workbenchBoard, tokenId, targetSlot);
 
       if (!moveResult.moved) {
         setNotice('That sentence slot is locked.');
@@ -1345,7 +1460,7 @@ function App() {
 
   const handleResetWorkbenchLayout = () => {
     setGameState((current) => {
-      const placements: Partial<Record<WordId, WorkbenchGridSlot>> = {
+      const placements: Partial<Record<WorkbenchTokenId, WorkbenchGridSlot>> = {
         [current.activeNounId]: STARTING_WORKBENCH_SLOT,
       };
 
@@ -1456,19 +1571,17 @@ function App() {
                 </section>
               ) : null}
 
-              {/* Future rule: sentences should eventually allow only one active word per grammatical type/category. */}
               <WordCard
-                noun={effectiveNoun}
                 verb={activeVerb}
                 adjective={activeAdjective}
-                effectiveVerb={effectiveVerb}
                 adjectiveFeedback={effectiveAdjective ? parsedSentence.feedback : null}
+                modifierLinks={parsedSentence.modifierLinks}
+                activeTokenIds={parsedSentence.activeTokenIds}
                 verbSlotUnlocked={verbSlotUnlocked}
                 manualStampCount={gameState.manualStampCount}
                 activeWordStartedAt={gameState.activeWordStartedAt}
                 now={now}
-                tapGain={currentTapGain}
-                passiveGain={currentPassiveGain}
+                clauseProduction={clauseProduction}
                 visiblePathEvent={visiblePathEvent}
                 board={gameState.workbenchBoard}
                 stamps={stamps}
@@ -1520,11 +1633,17 @@ function App() {
           {activeTab === 'dictionary' ? (
             <DictionaryScreen
               unlockedWords={unlockedWords}
-              lockedPreviewWords={lockedAdjectiveWords}
+              lockedPreviewWords={lockedPreviewWords}
+              meaning={gameState.meaning}
+              andOwnedCount={gameState.andOwnedCount}
+              andPurchaseAvailable={gameState.twoHundredFiftyMeaningMilestoneGranted}
+              andPurchaseCost={andPurchaseCost}
               activeNounId={gameState.activeNounId}
               activeVerbId={gameState.activeVerbId}
               activeAdjectiveId={gameState.activeAdjectiveId}
               onSelectWord={handleSelectWord}
+              onBuyAnd={handleBuyAnd}
+              onPlaceAnd={() => handleSelectWord('and')}
             />
           ) : null}
 
@@ -1532,7 +1651,7 @@ function App() {
             <WordUpgradesMessage
               meaning={gameState.meaning}
               activeWord={effectiveNoun}
-              activeVerb={effectiveVerb}
+              sentence={parsedSentence}
               stampUpgradeLevel={gameState.stampUpgradeLevel}
               filingUpgradeLevel={gameState.filingUpgradeLevel}
               stampForceLevel={gameState.stampForceLevel}

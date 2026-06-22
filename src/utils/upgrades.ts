@@ -392,6 +392,14 @@ export function getActiveWordPowerLabel(
     return `Events appear ${30 * getVerbEffectMultiplier(verb)}% more often`;
   }
 
+  if (word.id === 'grow') {
+    return 'Adds 0.5% of current Meaning to its target clause tap gain';
+  }
+
+  if (word.id === 'flow') {
+    return 'Every 5 active minutes grants +50% total gains for 30s';
+  }
+
   if (word.id === 'understand') {
     return 'Doubles the active noun base tap and passive values';
   }

@@ -1,12 +1,8 @@
-import type { WordDefinition } from '../types/game';
+import type { ParsedSentence, WordDefinition } from '../types/game';
 import { formatMeaning, formatRate } from '../utils/format';
 import type { BigNumberSource } from '../utils/bigNumber.ts';
 import { gte } from '../utils/bigNumber.ts';
 import {
-  getEffectiveFilingUpgradeCost,
-  getEffectiveFilingUpgradeBonus,
-  getEffectiveStampUpgradeCost,
-  getEffectiveStampUpgradeBonus,
   getFilingUpgradeBonusModifierLabel,
   getFilingUpgradeDiscountModifierLabel,
   getNextUpgradeMilestone,
@@ -18,11 +14,18 @@ import {
   getUpgradeBaseBonus,
   getUpgradeMilestoneMultiplier,
 } from '../utils/upgrades';
+import {
+  getActiveSentenceClauseContexts,
+  getSentenceFilingUpgradeBonus,
+  getSentenceFilingUpgradeCost,
+  getSentenceStampUpgradeBonus,
+  getSentenceStampUpgradeCost,
+} from '../utils/sentenceProduction.ts';
 
 interface WordUpgradesMessageProps {
   meaning: BigNumberSource;
   activeWord: WordDefinition;
-  activeVerb: WordDefinition | null;
+  sentence: ParsedSentence;
   stampUpgradeLevel: number;
   filingUpgradeLevel: number;
   stampForceLevel: number;
@@ -98,7 +101,7 @@ function PercentageUpgradeCard({
 function WordUpgradesMessage({
   meaning,
   activeWord,
-  activeVerb,
+  sentence,
   stampUpgradeLevel,
   filingUpgradeLevel,
   stampForceLevel,
@@ -110,16 +113,25 @@ function WordUpgradesMessage({
   onBuyStampForce,
   onBuyFilingDepth,
 }: WordUpgradesMessageProps) {
-  const stampCost = getEffectiveStampUpgradeCost(stampUpgradeLevel, activeWord, activeVerb, upgradeCostMultiplier);
-  const filingCost = getEffectiveFilingUpgradeCost(filingUpgradeLevel, activeWord, activeVerb, upgradeCostMultiplier);
+  const stampCost = getSentenceStampUpgradeCost(sentence, stampUpgradeLevel, upgradeCostMultiplier);
+  const filingCost = getSentenceFilingUpgradeCost(sentence, filingUpgradeLevel, upgradeCostMultiplier);
   const stampMultiplier = getUpgradeMilestoneMultiplier(stampUpgradeLevel);
   const filingMultiplier = getUpgradeMilestoneMultiplier(filingUpgradeLevel);
   const nextStampMilestone = getNextUpgradeMilestone(stampUpgradeLevel);
   const nextFilingMilestone = getNextUpgradeMilestone(filingUpgradeLevel);
-  const stampBonusModifier = getStampUpgradeBonusModifierLabel(activeWord, activeVerb);
-  const stampDiscountModifier = getStampUpgradeDiscountModifierLabel(activeWord, activeVerb);
-  const filingBonusModifier = getFilingUpgradeBonusModifierLabel(activeWord, activeVerb);
-  const filingDiscountModifier = getFilingUpgradeDiscountModifierLabel(activeWord, activeVerb);
+  const clauseContexts = getActiveSentenceClauseContexts(sentence);
+  const stampBonusModifier = clauseContexts
+    .map((clause) => getStampUpgradeBonusModifierLabel(clause.noun, clause.verb))
+    .filter(Boolean).join(', ');
+  const stampDiscountModifier = clauseContexts
+    .map((clause) => getStampUpgradeDiscountModifierLabel(clause.noun, clause.verb))
+    .filter(Boolean).join(', ');
+  const filingBonusModifier = clauseContexts
+    .map((clause) => getFilingUpgradeBonusModifierLabel(clause.noun, clause.verb))
+    .filter(Boolean).join(', ');
+  const filingDiscountModifier = clauseContexts
+    .map((clause) => getFilingUpgradeDiscountModifierLabel(clause.noun, clause.verb))
+    .filter(Boolean).join(', ');
   const canAffordStamp = gte(meaning, stampCost);
   const canAffordFiling = gte(meaning, filingCost);
 
@@ -159,7 +171,7 @@ function WordUpgradesMessage({
               </div>
               <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
                 <dt className="text-xs font-bold uppercase text-stone-500">Total bonus</dt>
-                <dd className="font-bold text-[#27211a]">+{formatRate(getEffectiveStampUpgradeBonus(stampUpgradeLevel, activeWord, activeVerb))}/tap</dd>
+                <dd className="font-bold text-[#27211a]">+{formatRate(getSentenceStampUpgradeBonus(sentence, stampUpgradeLevel))}/tap</dd>
               </div>
               <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
                 <dt className="text-xs font-bold uppercase text-stone-500">Next milestone</dt>
@@ -171,13 +183,13 @@ function WordUpgradesMessage({
 
             {stampBonusModifier ? (
               <p className="mt-2 rounded border border-[#d8c8ad] bg-[#fffaf0] px-2 py-1 text-xs font-bold text-[#5e6f2d]">
-                Active word bonus: {stampBonusModifier}
+                Sentence bonus: {stampBonusModifier}
               </p>
             ) : null}
 
             {stampDiscountModifier ? (
               <p className="mt-2 rounded border border-[#d8c8ad] bg-[#fffaf0] px-2 py-1 text-xs font-bold text-[#5e6f2d]">
-                Active word discount: {stampDiscountModifier}
+                Sentence discount: {stampDiscountModifier}
               </p>
             ) : null}
 
@@ -217,7 +229,7 @@ function WordUpgradesMessage({
               </div>
               <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
                 <dt className="text-xs font-bold uppercase text-stone-500">Total bonus</dt>
-                <dd className="font-bold text-[#27211a]">+{formatRate(getEffectiveFilingUpgradeBonus(filingUpgradeLevel, activeWord, activeVerb))}/sec</dd>
+                <dd className="font-bold text-[#27211a]">+{formatRate(getSentenceFilingUpgradeBonus(sentence, filingUpgradeLevel))}/sec</dd>
               </div>
               <div className="rounded border border-[#eadbc3] bg-[#fffaf0] px-2 py-2">
                 <dt className="text-xs font-bold uppercase text-stone-500">Next milestone</dt>
@@ -229,13 +241,13 @@ function WordUpgradesMessage({
 
             {filingBonusModifier ? (
               <p className="mt-2 rounded border border-[#d8c8ad] bg-[#fffaf0] px-2 py-1 text-xs font-bold text-[#2f778c]">
-                Active word bonus: {filingBonusModifier}
+                Sentence bonus: {filingBonusModifier}
               </p>
             ) : null}
 
             {filingDiscountModifier ? (
               <p className="mt-2 rounded border border-[#d8c8ad] bg-[#fffaf0] px-2 py-1 text-xs font-bold text-[#2f778c]">
-                Active word discount: {filingDiscountModifier}
+                Sentence discount: {filingDiscountModifier}
               </p>
             ) : null}
 

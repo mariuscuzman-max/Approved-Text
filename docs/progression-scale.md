@@ -14,7 +14,7 @@
 * 1 Meaning: first path choice.
 * 10 Meaning: next word in chosen path.
 * 100 Meaning: first major structural unlock, likely second sentence slot.
-* 250 Meaning: unlock And as a planned grammar word.
+* 250 Meaning: And becomes purchasable for 250 Meaning; additional copies scale by x100.
 * 500 Meaning: unlock the third board slot.
 * 1,000 Meaning: unlock Heavy and Still as the first adjective modifier layer.
 * 2,000 Meaning: Oak/Lake flat-stat word tier.

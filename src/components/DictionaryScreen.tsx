@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { getPathRibbonStyles, getPathThemeStyles, getWordTypeStyles } from '../data/words';
 import type { WordDefinition, WordId } from '../types/game';
+import type { BigNumberSource } from '../utils/bigNumber.ts';
+import { lt } from '../utils/bigNumber.ts';
 import { formatMeaning, formatRate } from '../utils/format';
 
 interface DictionaryScreenProps {
@@ -9,7 +11,13 @@ interface DictionaryScreenProps {
   activeNounId: string;
   activeVerbId: string | null;
   activeAdjectiveId: string | null;
+  meaning: BigNumberSource;
+  andOwnedCount: number;
+  andPurchaseAvailable: boolean;
+  andPurchaseCost: BigNumberSource;
   onSelectWord: (wordId: WordDefinition['id']) => void;
+  onBuyAnd: () => void;
+  onPlaceAnd: () => void;
 }
 
 function DictionaryScreen({
@@ -18,7 +26,13 @@ function DictionaryScreen({
   activeNounId,
   activeVerbId,
   activeAdjectiveId,
+  meaning,
+  andOwnedCount,
+  andPurchaseAvailable,
+  andPurchaseCost,
   onSelectWord,
+  onBuyAnd,
+  onPlaceAnd,
 }: DictionaryScreenProps) {
   const [search, setSearch] = useState('');
   const normalizedSearch = search.trim().toLowerCase();
@@ -70,6 +84,7 @@ function DictionaryScreen({
               const isActiveVerb = activeVerbId === word.id;
               const isActiveAdjective = activeAdjectiveId === word.id;
               const isUnlocked = unlockedWordIds.has(word.id);
+              const isAnd = word.id === 'and';
               const activeLabel = isActiveNoun
                 ? 'Active noun'
                 : isActiveVerb
@@ -77,6 +92,71 @@ function DictionaryScreen({
                   : isActiveAdjective
                     ? 'Active adjective'
                     : null;
+
+              if (isAnd) {
+                const canBuyAnd = andPurchaseAvailable && !lt(meaning, andPurchaseCost);
+
+                return (
+                  <article
+                    key={word.id}
+                    className={`rounded-lg border-2 p-2 text-left shadow-sm ${getPathThemeStyles(word.pathTheme)}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-bold text-[#27211a]">{word.text}</h3>
+                          <span className={`rounded border px-2 py-0.5 text-[0.7rem] font-bold capitalize ${getWordTypeStyles(word.type)}`}>
+                            {word.type}
+                          </span>
+                        </div>
+                        <div className={`mt-1 inline-block rounded px-2 py-0.5 text-[0.68rem] font-bold ${getPathRibbonStyles(word.pathTheme)}`}>
+                          {word.pathLabel}
+                        </div>
+                        <p className="mt-2 text-xs leading-4 text-stone-600">{word.effectDescription}</p>
+                      </div>
+
+                      <div className="grid shrink-0 grid-cols-2 gap-1 text-center text-[0.68rem] font-bold text-[#27211a]">
+                        <div className="rounded border border-[#eadbc3] bg-white/75 px-2 py-1">
+                          +{formatMeaning(word.tapValue)}
+                        </div>
+                        <div className="rounded border border-[#eadbc3] bg-white/75 px-2 py-1">
+                          +{formatRate(word.passiveValue)}/s
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#decaa9] pt-2">
+                      <div className="text-xs font-semibold text-stone-600">
+                        Owned: {andOwnedCount} · Next cost: {formatMeaning(andPurchaseCost)} Meaning
+                      </div>
+                      <div className="flex gap-1">
+                        {andOwnedCount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={onPlaceAnd}
+                            className="min-h-9 rounded border border-[#9a6a36] bg-white px-3 text-xs font-bold text-[#6f4f24] transition hover:bg-[#fff7e8]"
+                          >
+                            Place
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={!canBuyAnd}
+                          onClick={onBuyAnd}
+                          className="min-h-9 rounded border border-[#9a6a36] bg-[#7a4b2b] px-3 text-xs font-bold text-white transition hover:bg-[#633b22] disabled:cursor-not-allowed disabled:border-stone-300 disabled:bg-stone-300 disabled:text-stone-500"
+                        >
+                          {andPurchaseAvailable ? 'Buy And' : 'Available at 250'}
+                        </button>
+                      </div>
+                    </div>
+                    {andOwnedCount > 0 ? (
+                      <p className="mt-1 text-[0.68rem] font-semibold text-stone-500">
+                        Each owned copy can occupy one board slot.
+                      </p>
+                    ) : null}
+                  </article>
+                );
+              }
 
               return (
             <button
@@ -110,7 +190,7 @@ function DictionaryScreen({
                   ) : null}
                   {!isUnlocked ? (
                     <div className="mt-1 inline-block rounded border border-stone-300 bg-stone-100 px-2 py-0.5 text-[0.65rem] font-bold text-stone-500">
-                      Unlocks at 1.00K Meaning
+                      Unlocks at {formatMeaning(word.unlockMeaning)} Meaning
                     </div>
                   ) : null}
                 </div>

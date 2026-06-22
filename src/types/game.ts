@@ -62,7 +62,8 @@ export type UpgradePath = 'farm' | 'water';
 export type PathChoice = UpgradePath | null;
 
 export type WorkbenchSlot = 'noun' | 'verb';
-export type WorkbenchGridSlot = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+export type WorkbenchGridSlot = 0 | 1 | 2 | 3 | 4 | 5;
+export type WorkbenchTokenId = WordId | `and:${number}`;
 
 export interface WorkbenchCardPosition {
   xPercent: number;
@@ -76,11 +77,28 @@ export interface WorkbenchLayout {
 
 export interface WorkbenchBoard {
   unlockedSlots: WorkbenchGridSlot[];
-  placements: Partial<Record<WordId, WorkbenchGridSlot>>;
+  placements: Partial<Record<WorkbenchTokenId, WorkbenchGridSlot>>;
+}
+
+export interface SentenceNounClause {
+  nounId: WordId;
+  effectiveVerbId: WordId | null;
+  effectiveAdjectiveId: WordId | null;
+}
+
+export interface SentenceModifierLink {
+  modifierWordId: WordId;
+  targetNounId: WordId;
+  kind: 'verb' | 'adjective';
 }
 
 export interface ParsedSentence {
   orderedWordIds: WordId[];
+  activeTokenIds: WorkbenchTokenId[];
+  looseTokenIds: WorkbenchTokenId[];
+  nounClauses: SentenceNounClause[];
+  modifierLinks: SentenceModifierLink[];
+  activeConnectorCount: number;
   activeNounId: WordId;
   effectiveVerbId: WordId | null;
   effectiveAdjectiveId: WordId | null;
@@ -120,6 +138,7 @@ export type SpecialEffectType =
   | 'instant_event_reward'
   | 'chance_bonus'
   | 'offline_bonus'
+  | 'connector_production_multiplier'
   | 'future_sentence_synergy';
 
 export type UpgradeEffectType =
@@ -188,6 +207,7 @@ export interface GameState {
   activeAdjectiveId: WordId | null;
   activeWordId: WordId;
   unlockedWordIds: WordId[];
+  andOwnedCount: number;
   chosenFirstPath: WordId | null;
   passiveMeaningPerSecond: BigNumber;
   tenMeaningMilestoneGranted: boolean;

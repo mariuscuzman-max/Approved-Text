@@ -1,6 +1,7 @@
 import type { GameState, SerializedGameState, WordId } from '../types/game';
 import { serializeBigNumber, toDecimal } from './bigNumber.ts';
 import { serializeGlobalStats } from './stats.ts';
+import { isWorkbenchTokenId } from './workbench.ts';
 
 const STORAGE_KEY = 'approved-text-save-v4';
 const OLD_STORAGE_KEYS = ['approved-text-save-v1', 'approved-text-save-v2', 'approved-text-save-v3'];
@@ -99,7 +100,9 @@ function isSavedGameState(value: unknown): value is SerializedGameState {
       saved.workbenchBoard.unlockedSlots.every((slot) => typeof slot === 'number') &&
       typeof saved.workbenchBoard.placements === 'object' &&
       saved.workbenchBoard.placements !== null &&
-      Object.entries(saved.workbenchBoard.placements).every(([wordId, slot]) => isWordId(wordId) && typeof slot === 'number')
+      Object.entries(saved.workbenchBoard.placements).every(([tokenId, slot]) => (
+        isWorkbenchTokenId(tokenId) && typeof slot === 'number'
+      ))
     );
 
   return (
@@ -110,6 +113,10 @@ function isSavedGameState(value: unknown): value is SerializedGameState {
     (isWordId(saved.activeAdjectiveId) || saved.activeAdjectiveId === null || saved.activeAdjectiveId === undefined) &&
     Array.isArray(saved.unlockedWordIds) &&
     saved.unlockedWordIds.every(isWordId) &&
+    (
+      saved.andOwnedCount === undefined ||
+      (typeof saved.andOwnedCount === 'number' && Number.isInteger(saved.andOwnedCount) && saved.andOwnedCount >= 0)
+    ) &&
     (isWordId(saved.chosenFirstPath) || saved.chosenFirstPath === null) &&
     isBigNumberSaveValue(saved.passiveMeaningPerSecond) &&
     (typeof saved.tenMeaningMilestoneGranted === 'boolean' || saved.tenMeaningMilestoneGranted === undefined) &&

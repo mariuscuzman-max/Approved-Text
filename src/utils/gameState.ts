@@ -59,6 +59,7 @@ export function createDefaultState(): GameState {
     activeAdjectiveId: null,
     activeWordId: 'world',
     unlockedWordIds: ['world'],
+    andOwnedCount: 0,
     chosenFirstPath: null,
     passiveMeaningPerSecond: toDecimal(0),
     tenMeaningMilestoneGranted: false,
@@ -160,6 +161,10 @@ export function mergeSavedState(saved: GameState | SerializedGameState | null): 
     activeAdjectiveId,
     activeWordId: activeNounId,
     unlockedWordIds,
+    andOwnedCount: Math.max(
+      0,
+      Math.floor(saved.andOwnedCount ?? (saved.unlockedWordIds.includes('and') ? 1 : 0)),
+    ),
     passiveMeaningPerSecond: savedPassiveMeaningPerSecond,
     tenMeaningMilestoneGranted:
       saved.tenMeaningMilestoneGranted ??

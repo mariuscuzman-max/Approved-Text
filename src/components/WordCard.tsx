@@ -1,33 +1,40 @@
 import { useRef, useState } from 'react';
 import type { MouseEvent, PointerEvent } from 'react';
-import { getPathRibbonStyles, getPathThemeStyles } from '../data/words';
+import { getPathRibbonStyles, getPathThemeStyles, getWordById } from '../data/words';
 import type {
   StampEffect,
   VisiblePathEvent,
   WheelRevealState,
   WordDefinition,
-  WordId,
+  SentenceModifierLink,
   WorkbenchBoard,
   WorkbenchGridSlot,
+  WorkbenchTokenId,
 } from '../types/game';
 import { formatMeaning, formatRate } from '../utils/format';
-import type { BigNumber } from '../utils/bigNumber.ts';
+import type { SentenceClauseProduction } from '../utils/sentenceProduction.ts';
 import { isStampBlockedElement, shouldStampFromPointerInteraction } from '../utils/stampInput';
 import { getActiveWordPowerLabel, getRootChargeLabel } from '../utils/upgrades';
-import { WORKBENCH_SLOT_COUNT } from '../utils/workbench';
+import { getWordConnectionDisplay } from '../utils/sentenceConnections.ts';
+import {
+  WORKBENCH_BOARD_HEIGHT_PERCENT,
+  WORKBENCH_GRID_COLUMNS,
+  WORKBENCH_GRID_ROWS,
+  WORKBENCH_SLOT_COUNT,
+  getWorkbenchTokenWordId,
+} from '../utils/workbench';
 
 interface WordCardProps {
-  noun: WordDefinition;
   verb: WordDefinition | null;
   adjective: WordDefinition | null;
-  effectiveVerb: WordDefinition | null;
   adjectiveFeedback: string | null;
+  modifierLinks: SentenceModifierLink[];
+  activeTokenIds: WorkbenchTokenId[];
   verbSlotUnlocked: boolean;
   manualStampCount: number;
   activeWordStartedAt: number;
   now: number;
-  tapGain: BigNumber;
-  passiveGain: BigNumber;
+  clauseProduction: SentenceClauseProduction[];
   visiblePathEvent: VisiblePathEvent | null;
   board: WorkbenchBoard;
   stamps: StampEffect[];
@@ -37,12 +44,12 @@ interface WordCardProps {
   wheelReveal: WheelRevealState | null;
   onWheelSpin: (event: VisiblePathEvent) => void;
   onUnavailableSlot: () => void;
-  onMoveWord: (wordId: WordId, xPercent: number, yPercent: number) => void;
+  onMoveWord: (tokenId: WorkbenchTokenId, xPercent: number, yPercent: number) => void;
   onResetLayout: () => void;
 }
 
 interface DragState {
-  wordId: WordId;
+  tokenId: WorkbenchTokenId;
   startX: number;
   startY: number;
   offsetX: number;
@@ -51,20 +58,22 @@ interface DragState {
 }
 
 interface DragPosition {
-  wordId: WordId;
+  tokenId: WorkbenchTokenId;
   x: number;
   y: number;
 }
 
 function getSlotStyle(slot: WorkbenchGridSlot) {
-  const col = slot % 3;
-  const row = Math.floor(slot / 3);
+  const col = slot % WORKBENCH_GRID_COLUMNS;
+  const row = Math.floor(slot / WORKBENCH_GRID_COLUMNS);
+  const columnWidth = 100 / WORKBENCH_GRID_COLUMNS;
+  const rowHeight = WORKBENCH_BOARD_HEIGHT_PERCENT / WORKBENCH_GRID_ROWS;
 
   return {
-    left: `calc(${col * (100 / 3)}% + 0.25rem)`,
-    top: `calc(${row * (100 / 3)}% + 0.25rem)`,
-    width: 'calc(33.333% - 0.5rem)',
-    height: 'calc(33.333% - 0.5rem)',
+    left: `calc(${col * columnWidth + 3}% + 0.15rem)`,
+    top: `calc(${row * rowHeight + 2.5}% + 0.15rem)`,
+    width: 'calc(27.333% - 0.3rem)',
+    height: 'calc(24% - 0.3rem)',
   };
 }
 
@@ -77,13 +86,13 @@ function getCellCenterPercent(clientX: number, clientY: number, bounds: DOMRect)
 
 function WorkbenchWordCard({
   word,
-  noun,
-  effectiveVerb,
+  tokenId,
+  modifierLinks,
+  activeTokenIds,
   manualStampCount,
   activeWordStartedAt,
   now,
-  tapGain,
-  passiveGain,
+  clauseProduction,
   dragPosition,
   slot,
   onPointerDown,
@@ -91,59 +100,90 @@ function WorkbenchWordCard({
   onPointerUp,
 }: {
   word: WordDefinition;
-  noun: WordDefinition;
-  effectiveVerb: WordDefinition | null;
+  tokenId: WorkbenchTokenId;
+  modifierLinks: SentenceModifierLink[];
+  activeTokenIds: WorkbenchTokenId[];
   manualStampCount: number;
   activeWordStartedAt: number;
   now: number;
-  tapGain: BigNumber;
-  passiveGain: BigNumber;
+  clauseProduction: SentenceClauseProduction[];
   dragPosition: DragPosition | null;
   slot: WorkbenchGridSlot;
-  onPointerDown: (event: PointerEvent<HTMLElement>, wordId: WordId) => void;
+  onPointerDown: (event: PointerEvent<HTMLElement>, tokenId: WorkbenchTokenId) => void;
   onPointerMove: (event: PointerEvent<HTMLElement>) => void;
   onPointerUp: (event: PointerEvent<HTMLElement>) => void;
 }) {
-  const isNoun = word.type === 'noun';
+  const isActiveToken = activeTokenIds.includes(tokenId);
+  const linkedVerbId = modifierLinks.find((link) => (
+    link.kind === 'verb' && link.targetNounId === word.id
+  ))?.modifierWordId ?? null;
+  const linkedVerb = linkedVerbId ? getWordById(linkedVerbId) : null;
   const powerLabel = getActiveWordPowerLabel(
     word,
-    isNoun ? effectiveVerb : null,
+    word.type === 'noun' ? linkedVerb : null,
     activeWordStartedAt,
     now,
   );
-  const rootChargeLabel = word.id === noun.id && word.id === 'root' ? getRootChargeLabel(manualStampCount) : null;
-  const cardStyle = dragPosition?.wordId === word.id
+  const rootChargeLabel = isActiveToken && word.id === 'root' ? getRootChargeLabel(manualStampCount) : null;
+  const connectionDisplay = getWordConnectionDisplay(modifierLinks, word.id);
+  const nounProduction = clauseProduction.find((production) => production.nounId === word.id);
+  const cardStyle = dragPosition?.tokenId === tokenId
     ? {
         left: dragPosition.x,
         top: dragPosition.y,
-        width: 'calc(33.333% - 0.5rem)',
-        height: 'calc(33.333% - 0.5rem)',
+        width: 'calc(27.333% - 0.3rem)',
+        height: 'calc(24% - 0.3rem)',
       }
     : getSlotStyle(slot);
+  const connectionStyle = connectionDisplay
+    ? {
+        borderColor: connectionDisplay.color,
+        boxShadow: `0 0 0 2px ${connectionDisplay.color}, 0 0 14px ${connectionDisplay.color}66`,
+      }
+    : {};
 
   return (
     <article
-      className={`absolute z-[2] grid cursor-grab touch-none grid-rows-[auto_auto_auto_1fr] overflow-hidden rounded-md border-2 p-1.5 shadow-sm active:cursor-grabbing ${getPathThemeStyles(word.pathTheme)}`}
-      style={cardStyle}
-      onPointerDown={(event) => onPointerDown(event, word.id)}
+      className={`absolute z-[2] grid cursor-grab touch-none grid-rows-[auto_auto_auto_1fr] overflow-hidden rounded-md border-2 p-1.5 shadow-sm active:cursor-grabbing ${getPathThemeStyles(word.pathTheme)} ${
+        isActiveToken ? '' : 'border-dashed grayscale opacity-50'
+      }`}
+      style={{ ...cardStyle, ...connectionStyle }}
+      onPointerDown={(event) => onPointerDown(event, tokenId)}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="text-[0.55rem] font-black uppercase leading-none text-stone-500">{word.type}</div>
+      <div className="flex items-center justify-between gap-1 text-[0.55rem] font-black uppercase leading-none text-stone-500">
+        <span>{word.type}</span>
+        {connectionDisplay ? (
+          <span className="truncate normal-case" style={{ color: connectionDisplay.color }}>
+            {connectionDisplay.label}
+          </span>
+        ) : (
+          <span className="text-[0.5rem] tracking-wide">{isActiveToken ? 'ACTIVE' : 'LOOSE'}</span>
+        )}
+      </div>
       <div className={`mt-1 h-1 rounded-full ${getPathRibbonStyles(word.pathTheme)}`} />
       <h3 className="min-w-0 whitespace-nowrap font-serif text-[clamp(0.7rem,3.2vw,0.95rem)] font-bold leading-5 text-[#27211a]">
         {word.text}
       </h3>
       <div className="mt-1 min-h-0 overflow-hidden text-[0.56rem] font-bold leading-3 text-[#27211a]">
-        {word.id === noun.id ? (
+        {isActiveToken && nounProduction ? (
           <>
-            <div>Tap +{formatMeaning(tapGain)}</div>
-            <div>Idle +{formatRate(passiveGain)}/s</div>
+            <div>Tap +{formatMeaning(nounProduction.tapGain)}</div>
+            <div>Idle +{formatRate(nounProduction.passiveGain)}/s</div>
           </>
         ) : null}
-        {powerLabel ? <div className="mt-1 line-clamp-2">Power: {powerLabel}</div> : null}
+        {isActiveToken && word.type === 'connector' ? (
+          <>
+            <div>Tap +{formatMeaning(word.tapValue)}</div>
+            <div>Idle +{formatRate(word.passiveValue)}/s</div>
+            <div className="mt-1 line-clamp-2">Power: total tap and idle +10%</div>
+          </>
+        ) : null}
+        {!isActiveToken ? <div>Inactive in this order</div> : null}
+        {isActiveToken && powerLabel ? <div className="mt-1 line-clamp-2">Power: {powerLabel}</div> : null}
         {rootChargeLabel ? <div className="mt-1">Root: {rootChargeLabel}</div> : null}
       </div>
     </article>
@@ -151,17 +191,16 @@ function WorkbenchWordCard({
 }
 
 function WordCard({
-  noun,
   verb,
   adjective,
-  effectiveVerb,
   adjectiveFeedback,
+  modifierLinks,
+  activeTokenIds,
   verbSlotUnlocked,
   manualStampCount,
   activeWordStartedAt,
   now,
-  tapGain,
-  passiveGain,
+  clauseProduction,
   visiblePathEvent,
   board,
   stamps,
@@ -177,7 +216,13 @@ function WordCard({
   const workbenchRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const [dragPosition, setDragPosition] = useState<DragPosition | null>(null);
-  const cards = [noun, verb, adjective].filter((word): word is WordDefinition => Boolean(word));
+  const cards = (Object.entries(board.placements) as [WorkbenchTokenId, WorkbenchGridSlot][])
+    .map(([tokenId, slot]) => ({
+      tokenId,
+      slot,
+      word: getWordById(getWorkbenchTokenWordId(tokenId)),
+    }));
+  const verbSlotOccupied = Object.values(board.placements).includes(1);
 
   const handlePointerStamp = (event: MouseEvent<HTMLDivElement>) => {
     if (isStampBlockedElement(event.target)) {
@@ -197,7 +242,7 @@ function WordCard({
     onStamp(clientX - bounds.left, clientY - bounds.top);
   };
 
-  const handleCardPointerDown = (event: PointerEvent<HTMLElement>, wordId: WordId) => {
+  const handleCardPointerDown = (event: PointerEvent<HTMLElement>, tokenId: WorkbenchTokenId) => {
     const workbenchBounds = workbenchRef.current?.getBoundingClientRect();
 
     if (!workbenchBounds) {
@@ -206,7 +251,7 @@ function WordCard({
 
     const cardBounds = event.currentTarget.getBoundingClientRect();
     dragStateRef.current = {
-      wordId,
+      tokenId,
       startX: event.clientX,
       startY: event.clientY,
       offsetX: event.clientX - cardBounds.left,
@@ -214,7 +259,7 @@ function WordCard({
       moved: false,
     };
     setDragPosition({
-      wordId,
+      tokenId,
       x: cardBounds.left - workbenchBounds.left,
       y: cardBounds.top - workbenchBounds.top,
     });
@@ -238,7 +283,7 @@ function WordCard({
     const nextY = Math.max(0, Math.min(workbenchBounds.height - cardBounds.height, event.clientY - workbenchBounds.top - dragState.offsetY));
 
     setDragPosition({
-      wordId: dragState.wordId,
+      tokenId: dragState.tokenId,
       x: nextX,
       y: nextY,
     });
@@ -257,7 +302,7 @@ function WordCard({
 
     if (!shouldStampFromPointerInteraction({ movementDistance: moveDistance, dragWasActive: dragState.moved })) {
       const { xPercent, yPercent } = getCellCenterPercent(event.clientX, event.clientY, workbenchBounds);
-      onMoveWord(dragState.wordId, xPercent, yPercent);
+      onMoveWord(dragState.tokenId, xPercent, yPercent);
     } else {
       stampAtClientPoint(event.clientX, event.clientY);
     }
@@ -273,6 +318,11 @@ function WordCard({
         <div>
           <div className="text-xs font-semibold uppercase text-stone-500">Sentence Workbench</div>
           <div className="text-sm font-medium text-stone-500">Drag words into reading order.</div>
+          <div className="mt-1 flex flex-wrap gap-2 text-[0.6rem] font-bold uppercase tracking-wide text-stone-400">
+            <span>Solid: active</span>
+            <span>Glow: connected</span>
+            <span>Faded: loose</span>
+          </div>
           {adjectiveFeedback ? (
             <div className="mt-1 text-xs font-bold text-[#6f4f24]">{adjectiveFeedback}</div>
           ) : null}
@@ -280,7 +330,7 @@ function WordCard({
 
         <div className="flex items-center gap-2">
           <div className="rounded border border-[#decaa9] bg-[#fff7e8] px-2 py-1 text-xs font-bold text-stone-600">
-            {board.unlockedSlots.length} / 9
+            {board.unlockedSlots.length} / {WORKBENCH_SLOT_COUNT}
           </div>
           <button
             type="button"
@@ -309,11 +359,10 @@ function WordCard({
         onClick={handlePointerStamp}
         className="relative mx-auto mt-3 aspect-square min-h-0 w-[min(92vw,620px)] max-w-full overflow-hidden rounded border border-dashed border-[#decaa9] bg-white/55 p-1 text-left outline-none transition active:scale-[0.997]"
       >
-        <div className="pointer-events-none absolute left-2 top-2 z-[1] rounded bg-white/75 px-2 py-1 text-[0.62rem] font-bold text-stone-500 shadow-sm">
-          Tap anywhere here to stamp Meaning.
-        </div>
-
-        <div className="absolute inset-1 grid grid-cols-3 grid-rows-3 gap-1">
+        <div
+          className="absolute inset-x-1 top-1 grid grid-cols-3 grid-rows-2 gap-1"
+          style={{ height: `calc(${WORKBENCH_BOARD_HEIGHT_PERCENT}% - 0.25rem)` }}
+        >
           {Array.from({ length: WORKBENCH_SLOT_COUNT }, (_, index) => {
             const unlocked = board.unlockedSlots.includes(index as WorkbenchGridSlot);
             return (
@@ -331,24 +380,32 @@ function WordCard({
           })}
         </div>
 
-        {cards.map((word) => {
-          const slot = board.placements[word.id];
+        <div
+          className="pointer-events-none absolute inset-x-3 bottom-3 grid place-items-center rounded-md border border-dashed border-[#d8c39f] bg-[#fffaf0]/75 text-center"
+          style={{ top: `${WORKBENCH_BOARD_HEIGHT_PERCENT + 3}%` }}
+        >
+          <div>
+            <div className="font-serif text-sm font-bold text-[#6f4f24]">Stamp Area</div>
+            <div className="mt-1 text-[0.65rem] font-semibold text-stone-500">Tap here to stamp Meaning.</div>
+          </div>
+        </div>
 
-          if (slot === undefined || !board.unlockedSlots.includes(slot)) {
+        {cards.map(({ tokenId, word, slot }) => {
+          if (!board.unlockedSlots.includes(slot)) {
             return null;
           }
 
           return (
             <WorkbenchWordCard
-              key={word.id}
+              key={tokenId}
               word={word}
-              noun={noun}
-              effectiveVerb={effectiveVerb}
+              tokenId={tokenId}
+              modifierLinks={modifierLinks}
+              activeTokenIds={activeTokenIds}
               manualStampCount={manualStampCount}
               activeWordStartedAt={activeWordStartedAt}
               now={now}
-              tapGain={tapGain}
-              passiveGain={passiveGain}
+              clauseProduction={clauseProduction}
               dragPosition={dragPosition}
               slot={slot}
               onPointerDown={handleCardPointerDown}
@@ -358,7 +415,7 @@ function WordCard({
           );
         })}
 
-        {verbSlotUnlocked && !verb ? (
+        {verbSlotUnlocked && !verb && !verbSlotOccupied ? (
           <div
             className="absolute grid place-items-center rounded-md border-2 border-dashed border-[#d8c8ad] bg-[#f3eadc]/70 p-2 text-center text-[0.65rem] font-bold text-stone-400"
             style={getSlotStyle(1)}
@@ -368,7 +425,7 @@ function WordCard({
           </div>
         ) : null}
 
-        {!verbSlotUnlocked ? (
+        {!verbSlotUnlocked && !verbSlotOccupied ? (
           <div
             className="absolute grid place-items-center rounded-md border-2 border-dashed border-[#d8c8ad] bg-[#f3eadc]/70 p-2 text-center text-[0.65rem] font-bold text-stone-400"
             style={getSlotStyle(1)}
